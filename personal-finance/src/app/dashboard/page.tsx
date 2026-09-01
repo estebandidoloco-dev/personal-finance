@@ -1,0 +1,72 @@
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import { DeleteAccountButton } from '@/components/ui/DeleteAccountButton';
+import { Upload } from 'lucide-react';
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const { data: accounts } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true });
+
+  const accountsList = accounts ?? [];
+
+  return (
+    <main className="mx-auto max-w-4xl p-6">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Cuentas</h1>
+        <Link
+          href="/dashboard/accounts/new"
+          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          + Nueva cuenta
+        </Link>
+        <Link
+          href="/dashboard/import"
+          className="flex items-center gap-2 rounded bg-gray-600 px-4 py-2 text-white hover:bg-gray-700"
+        >
+          <Upload className="h-4 w-4" /> Importar CSV
+        </Link>
+      </div>
+
+      {accountsList.length === 0 ? (
+        <div className="py-12 text-center text-gray-500">
+          <p className="mb-4">No hay cuentas aún</p>
+          <Link href="/dashboard/accounts/new" className="text-blue-600 hover:underline">
+            Crea tu primera cuenta
+          </Link>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {accountsList.map((acc) => (
+            <li
+              key={acc.id}
+              className="flex items-center justify-between rounded-lg border bg-white p-4 dark:bg-gray-800"
+            >
+              <div>
+                <p className="font-medium">{acc.name}</p>
+                <p className="text-sm text-gray-500">
+                  {acc.type} •{' '}
+                  {(acc.balance ?? 0).toLocaleString('es-MX', {
+                    style: 'currency',
+                    currency: 'MXN',
+                  })}
+                  {acc.is_shared && ' 👥'}
+                </p>
+              </div>
+              <DeleteAccountButton accountId={acc.id} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}
