@@ -8,24 +8,36 @@ function LoginForm() {
   const { supabase } = useSupabase();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirect') || '/dashboard';
+  const requestedRedirect = searchParams.get('redirect');
+  const redirectTo =
+    requestedRedirect?.startsWith('/dashboard') && !requestedRedirect.startsWith('//')
+      ? requestedRedirect
+      : '/dashboard';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setNotice('');
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      if (loginError) {
+        setError(loginError.message);
+        return;
+      }
+
       router.push(redirectTo);
       router.refresh();
+    } catch {
+      setError('No se pudo conectar con el servicio de autenticación.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -33,16 +45,22 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setNotice('');
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}${redirectTo}` },
-    });
-    if (error) {
-      setError(error.message);
+    try {
+      const { error: magicLinkError } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: `${window.location.origin}${redirectTo}` },
+      });
+      if (magicLinkError) {
+        setError(magicLinkError.message);
+      } else {
+        setNotice('Revisa tu email para el enlace mágico');
+      }
+    } catch {
+      setError('No se pudo conectar con el servicio de autenticación.');
+    } finally {
       setLoading(false);
-    } else {
-      setError('Revisa tu email para el enlace mágico');
     }
   };
 
@@ -52,6 +70,9 @@ function LoginForm() {
         <h1 className="mb-6 text-center text-2xl font-bold">Iniciar sesión</h1>
 
         {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+        {notice && (
+          <div className="mb-4 rounded bg-green-100 p-3 text-sm text-green-700">{notice}</div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>

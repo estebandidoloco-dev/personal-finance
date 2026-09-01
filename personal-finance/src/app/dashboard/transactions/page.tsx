@@ -32,6 +32,7 @@ export default function TransactionsPage() {
   const { supabase } = useSupabase();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [newKind, setNewKind] = useState<'income' | 'expense'>('expense');
@@ -49,37 +50,52 @@ export default function TransactionsPage() {
     []
   );
 
-  const fetchTransactions = async (reset = false) => {
+  const fetchTransactions = async (reset = false, targetPage = reset ? 0 : page) => {
     setLoading(true);
+    setPageError('');
     const params = new URLSearchParams();
     if (filters.start_date) params.set('start_date', filters.start_date);
     if (filters.end_date) params.set('end_date', filters.end_date);
     if (filters.category_id) params.set('category_id', filters.category_id);
     if (filters.account_id) params.set('account_id', filters.account_id);
     params.set('limit', String(pageSize));
-    params.set('offset', String(reset ? 0 : page * pageSize));
+    params.set('offset', String(targetPage * pageSize));
 
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) {
+      setPageError('Tu sesión no está disponible. Vuelve a iniciar sesión.');
       setLoading(false);
       return;
     }
 
-    const res = await fetch(`/api/transactions?${params}`);
-    if (res.ok) {
-      const newTx = await res.json();
+    try {
+      const res = await fetch(`/api/transactions?${params}`);
+      if (!res.ok) {
+        const result = (await res.json().catch(() => null)) as { error?: string } | null;
+        setPageError(result?.error || 'No se pudieron cargar las transacciones.');
+        return;
+      }
+
+      const newTx = (await res.json()) as Transaction[];
       setTransactions((prev) => (reset ? newTx : [...prev, ...newTx]));
       setHasMore(newTx.length === pageSize);
-      if (reset) setPage(0);
+      setPage(targetPage);
+    } catch {
+      setPageError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const fetchMetadata = async () => {
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
-    if (!user) return;
+    if (authError || !user) {
+      setPageError('Tu sesión no está disponible. Vuelve a iniciar sesión.');
+      return;
+    }
     const [accRes, catRes] = await Promise.all([
       supabase.from('accounts').select('id, name').eq('user_id', user.id).order('name'),
       supabase
@@ -88,26 +104,36 @@ export default function TransactionsPage() {
         .or(`user_id.eq.${user.id},user_id.is.null`)
         .order('name'),
     ]);
-    if (accRes.data) setAccounts(accRes.data);
-    if (catRes.data) setCategories(catRes.data);
+    if (accRes.error || catRes.error) {
+      setPageError('No se pudieron cargar las cuentas o categorías.');
+      return;
+    }
+    setAccounts(accRes.data ?? []);
+    setCategories(catRes.data ?? []);
   };
 
   useEffect(() => {
     // These functions synchronize server-backed state after a filter change.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchMetadata();
-    fetchTransactions(true);
+    void fetchMetadata();
+    void fetchTransactions(true, 0);
     // The callbacks intentionally use the current filter/page snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar transacción?')) return;
-    const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
-    } else {
-      alert('Error al eliminar');
+    setPageError('');
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const result = (await res.json().catch(() => null)) as { error?: string } | null;
+        setPageError(result?.error || 'No se pudo eliminar la transacción.');
+        return;
+      }
+      await fetchTransactions(true, 0);
+    } catch {
+      setPageError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
     }
   };
 
@@ -160,6 +186,10 @@ export default function TransactionsPage() {
       </div>
 
       {/* Filtros */}
+      {pageError && (
+        <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{pageError}</div>
+      )}
+
       <div className="mb-6 flex flex-wrap gap-4 rounded-lg border bg-white p-4 dark:bg-gray-800">
         <div className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-gray-400" />
@@ -305,8 +335,8 @@ export default function TransactionsPage() {
               <div className="border-t p-4 text-center">
                 <button
                   onClick={() => {
-                    setPage((p) => p + 1);
-                    fetchTransactions(false);
+                    const nextPage = page + 1;
+                    void fetchTransactions(false, nextPage);
                   }}
                   disabled={loading}
                   className="rounded bg-blue-600 px-6 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
@@ -326,7 +356,7 @@ export default function TransactionsPage() {
             setShowForm(false);
             setEditingTx(null);
           }}
-          onSuccess={() => fetchTransactions(true)}
+          onSuccess={() => fetchTransactions(true, 0)}
           defaultKind={newKind}
           initialData={
             editingTx

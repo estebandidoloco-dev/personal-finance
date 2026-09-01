@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { DeleteAccountButton } from '@/components/ui/DeleteAccountButton';
+import { EditAccountButton } from '@/components/ui/EditAccountButton';
+import { LogoutButton } from '@/components/ui/LogoutButton';
 import { Upload } from 'lucide-react';
 
 export default async function DashboardPage() {
@@ -11,7 +13,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const { data: accounts } = await supabase
+  const { data: accounts, error: accountsError } = await supabase
     .from('accounts')
     .select('*')
     .eq('user_id', user.id)
@@ -37,14 +39,24 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      {accountsList.length === 0 ? (
+      <div className="mb-4">
+        <LogoutButton />
+      </div>
+
+      {accountsError && (
+        <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">
+          No se pudieron cargar las cuentas. Actualiza la página para intentarlo de nuevo.
+        </div>
+      )}
+
+      {!accountsError && accountsList.length === 0 ? (
         <div className="py-12 text-center text-gray-500">
           <p className="mb-4">No hay cuentas aún</p>
           <Link href="/dashboard/accounts/new" className="text-blue-600 hover:underline">
             Crea tu primera cuenta
           </Link>
         </div>
-      ) : (
+      ) : !accountsError ? (
         <ul className="space-y-2">
           {accountsList.map((acc) => (
             <li
@@ -57,16 +69,28 @@ export default async function DashboardPage() {
                   {acc.type} •{' '}
                   {(acc.balance ?? 0).toLocaleString('es-MX', {
                     style: 'currency',
-                    currency: 'MXN',
+                    currency: acc.currency,
                   })}
                   {acc.is_shared && ' 👥'}
                 </p>
               </div>
-              <DeleteAccountButton accountId={acc.id} />
+              <div className="flex items-center gap-3">
+                <EditAccountButton
+                  account={{
+                    id: acc.id,
+                    name: acc.name,
+                    type: acc.type,
+                    currency: acc.currency,
+                    institution: acc.institution,
+                    is_shared: acc.is_shared,
+                  }}
+                />
+                <DeleteAccountButton accountId={acc.id} />
+              </div>
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </main>
   );
 }

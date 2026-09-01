@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal Finance
 
-## Getting Started
+Aplicación web para gestionar cuentas y un ledger personal de ingresos y gastos. Las operaciones financieras manuales se ejecutan mediante RPCs PostgreSQL atómicas; el saldo de cada cuenta es una caché derivada del saldo inicial y las transacciones confirmadas.
 
-First, run the development server:
+## Stack
+
+- Next.js 16, React 19 y TypeScript
+- Supabase Auth y PostgreSQL
+- Row Level Security (RLS)
+- Zod para validar contratos HTTP
+- Tailwind CSS
+
+## Requisitos
+
+- Node.js compatible con Next.js 16
+- npm
+- Docker Desktop para Supabase local
+- Supabase CLI, disponible como dependencia de desarrollo
+
+## Instalación
+
+```bash
+npm install
+```
+
+Copia `.env.example` a `.env.local` y completa:
+
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key-local>
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_DEFAULT_CURRENCY=MXN
+```
+
+No incluyas secretos en variables `NEXT_PUBLIC_*`. En particular, nunca uses `service_role` en componentes cliente, bundles del navegador ni archivos versionados.
+
+## Supabase local
+
+Si el repositorio aún no tiene `supabase/config.toml`, inicializa la configuración local una sola vez:
+
+```bash
+npx supabase init
+```
+
+Después levanta el stack y reconstruye la base local con las migraciones versionadas:
+
+```bash
+npx supabase start
+npx supabase db reset
+```
+
+`db reset` elimina y recrea exclusivamente la base local. Para despliegues remotos, revisa primero el diff y la reconciliación financiera; no ejecutes `db push` de forma accidental.
+
+Las migraciones están en `supabase/migrations/` y deben aplicarse en orden cronológico. No edites migraciones que ya puedan haber sido desplegadas; crea una nueva.
+
+## Desarrollo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La aplicación queda disponible en `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Validación
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Los tres comandos deben finalizar correctamente antes de integrar cambios.

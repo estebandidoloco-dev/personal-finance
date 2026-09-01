@@ -2,44 +2,46 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { useSupabase } from '@/components/providers/supabase-provider';
 
 export default function SignupPage() {
+  const { supabase } = useSupabase();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setNotice('');
 
-    const { error, data } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: name },
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-      },
-    });
+    try {
+      const { error: signUpError, data } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { display_name: name },
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
 
-    if (error) {
-      setError(error.message);
+      if (signUpError) {
+        setError(signUpError.message);
+      } else if (data.user && !data.session) {
+        setNotice('Revisa tu email para confirmar la cuenta');
+      } else {
+        router.push('/dashboard');
+        router.refresh();
+      }
+    } catch {
+      setError('No se pudo conectar con el servicio de autenticación.');
+    } finally {
       setLoading(false);
-    } else if (data.user && !data.session) {
-      setError('Revisa tu email para confirmar la cuenta');
-      setLoading(false);
-    } else {
-      router.push('/dashboard');
-      router.refresh();
     }
   };
 
@@ -49,6 +51,9 @@ export default function SignupPage() {
         <h1 className="mb-6 text-center text-2xl font-bold">Crear cuenta</h1>
 
         {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+        {notice && (
+          <div className="mb-4 rounded bg-green-100 p-3 text-sm text-green-700">{notice}</div>
+        )}
 
         <form onSubmit={handleSignup} className="space-y-4">
           <div>

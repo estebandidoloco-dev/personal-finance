@@ -57,8 +57,12 @@ export function TransactionForm({
     async function loadMetadata() {
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (authError || !user) {
+        setError('Tu sesión no está disponible. Vuelve a iniciar sesión.');
+        return;
+      }
 
       const [accRes, catRes, tagRes] = await Promise.all([
         supabase.from('accounts').select('id, name, type').eq('user_id', user.id).order('name'),
@@ -71,9 +75,14 @@ export function TransactionForm({
         supabase.from('tags').select('id, name, color').eq('user_id', user.id).order('name'),
       ]);
 
-      if (accRes.data) setAccounts(accRes.data);
-      if (catRes.data) setCategories(catRes.data);
-      if (tagRes.data) setTags(tagRes.data);
+      if (accRes.error || catRes.error || tagRes.error) {
+        setError('No se pudieron cargar las cuentas, categorías o etiquetas.');
+        return;
+      }
+
+      setAccounts(accRes.data ?? []);
+      setCategories(catRes.data ?? []);
+      setTags(tagRes.data ?? []);
     }
 
     void loadMetadata();
@@ -122,19 +131,25 @@ export function TransactionForm({
     }
 
     const url = initialData ? `/api/transactions/${initialData.id}` : '/api/transactions';
-    const response = await fetch(url, {
-      method: initialData ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch(url, {
+        method: initialData ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(result?.error || 'No se pudo guardar la transacción');
-      setLoading(false);
-    } else {
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(result?.error || 'No se pudo guardar la transacción');
+        return;
+      }
+
       onSuccess();
       onClose();
+    } catch {
+      setError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -313,7 +328,7 @@ export function TransactionForm({
               className="h-4 w-4"
             />
             <label htmlFor="is_shared" className="text-sm">
-              Gasto compartido (se repartirá)
+              Marcar como compartida (solo organizativo)
             </label>
           </div>
 

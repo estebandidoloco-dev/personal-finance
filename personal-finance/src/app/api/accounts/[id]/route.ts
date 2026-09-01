@@ -62,7 +62,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error?.code === '23514' && error.message.includes('currency')) {
+    return NextResponse.json(
+      { error: 'No puedes cambiar la moneda de una cuenta que ya tiene transacciones.' },
+      { status: 409 }
+    );
+  }
+  if (error?.code === 'PGRST116') {
+    return NextResponse.json({ error: 'Cuenta no encontrada.' }, { status: 404 });
+  }
+  if (error)
+    return NextResponse.json({ error: 'No se pudo actualizar la cuenta.' }, { status: 500 });
   return NextResponse.json(data);
 }
 
@@ -74,12 +84,21 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!parsedId.success) {
     return NextResponse.json(zodErrorResponse(parsedId.error), { status: 400 });
   }
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('accounts')
     .delete()
     .eq('id', parsedId.data)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error?.code === '23503') {
+    return NextResponse.json(
+      { error: 'No puedes eliminar una cuenta que todavía tiene transacciones.' },
+      { status: 409 }
+    );
+  }
+  if (error) return NextResponse.json({ error: 'No se pudo eliminar la cuenta.' }, { status: 500 });
+  if (!data) return NextResponse.json({ error: 'Cuenta no encontrada.' }, { status: 404 });
   return NextResponse.json({ success: true });
 }

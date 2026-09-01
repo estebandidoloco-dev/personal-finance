@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSupabase } from '@/components/providers/supabase-provider';
 
 const ACCOUNT_TYPES = [
   { value: 'checking', label: 'Cuenta corriente' },
@@ -14,7 +13,6 @@ const ACCOUNT_TYPES = [
 ] as const;
 
 export default function NewAccountPage() {
-  const { supabase } = useSupabase();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -41,32 +39,32 @@ export default function NewAccountPage() {
     setLoading(true);
     setError('');
 
-    // Obtener usuario actual
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setError('No hay sesión activa');
-      setLoading(false);
-      return;
-    }
+    try {
+      const response = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          type: form.type,
+          initial_balance: Number(form.initial_balance),
+          currency: form.currency.toUpperCase(),
+          is_shared: form.is_shared,
+          institution: form.institution || null,
+        }),
+      });
 
-    const { error } = await supabase.from('accounts').insert({
-      name: form.name,
-      type: form.type,
-      initial_balance: parseFloat(form.initial_balance) || 0,
-      currency: form.currency,
-      is_shared: form.is_shared,
-      institution: form.institution || null,
-      user_id: user.id, // ← AÑADIR ESTO
-    });
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(result?.error || 'No se pudo crear la cuenta');
+        return;
+      }
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
       router.push('/dashboard');
       router.refresh();
+    } catch {
+      setError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -160,7 +158,7 @@ export default function NewAccountPage() {
             className="h-4 w-4"
           />
           <label htmlFor="is_shared" className="text-sm">
-            Cuenta compartida (visible para ambos)
+            Marcar como compartida (solo organizativo)
           </label>
         </div>
 
