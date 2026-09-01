@@ -37,6 +37,7 @@ export function TransactionForm({
   >([]);
   const [tags, setTags] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(initialData?.tag_ids ?? []);
+  const [metadataLoading, setMetadataLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -61,6 +62,7 @@ export function TransactionForm({
       } = await supabase.auth.getUser();
       if (authError || !user) {
         setError('Tu sesión no está disponible. Vuelve a iniciar sesión.');
+        setMetadataLoading(false);
         return;
       }
 
@@ -77,12 +79,14 @@ export function TransactionForm({
 
       if (accRes.error || catRes.error || tagRes.error) {
         setError('No se pudieron cargar las cuentas, categorías o etiquetas.');
+        setMetadataLoading(false);
         return;
       }
 
       setAccounts(accRes.data ?? []);
       setCategories(catRes.data ?? []);
       setTags(tagRes.data ?? []);
+      setMetadataLoading(false);
     }
 
     void loadMetadata();
@@ -369,10 +373,16 @@ export function TransactionForm({
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || metadataLoading}
               className="flex-1 rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
             >
-              {loading ? 'Guardando...' : initialData ? 'Actualizar' : 'Crear'}
+              {metadataLoading
+                ? 'Cargando datos...'
+                : loading
+                  ? 'Guardando...'
+                  : initialData
+                    ? 'Actualizar'
+                    : 'Crear'}
             </button>
           </div>
         </form>

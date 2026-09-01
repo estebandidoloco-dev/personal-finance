@@ -23,11 +23,12 @@ Aplicación web para gestionar cuentas y un ledger personal de ingresos y gastos
 npm install
 ```
 
-Copia `.env.example` a `.env.local` y completa:
+Copia `.env.local.example` a `.env.local` para desarrollo local. Después de levantar Supabase,
+reemplaza `<local-anon-key>` por `ANON_KEY` mostrado por `npx supabase status -o env`:
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key-local>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<local-anon-key>
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_DEFAULT_CURRENCY=MXN
 ```
@@ -36,13 +37,7 @@ No incluyas secretos en variables `NEXT_PUBLIC_*`. En particular, nunca uses `se
 
 ## Supabase local
 
-Si el repositorio aún no tiene `supabase/config.toml`, inicializa la configuración local una sola vez:
-
-```bash
-npx supabase init
-```
-
-Después levanta el stack y reconstruye la base local con las migraciones versionadas:
+Con Docker Desktop abierto, levanta el stack y reconstruye la base local con las migraciones versionadas:
 
 ```bash
 npx supabase start
@@ -50,6 +45,17 @@ npx supabase db reset
 ```
 
 `db reset` elimina y recrea exclusivamente la base local. Para despliegues remotos, revisa primero el diff y la reconciliación financiera; no ejecutes `db push` de forma accidental.
+
+Para detener el stack local:
+
+```bash
+npx supabase stop
+```
+
+Si necesitas conservar una configuración remota, guárdala en `.env.remote.local`, que Git ignora y
+Next.js no carga automáticamente. Para volver al remoto, detén Supabase, mueve el `.env.local`
+local a un respaldo y copia o mueve `.env.remote.local` a `.env.local`. Reinicia Next.js después de
+cualquier cambio de entorno. No mezcles una URL local con una clave remota ni viceversa.
 
 Las migraciones están en `supabase/migrations/` y deben aplicarse en orden cronológico. No edites migraciones que ya puedan haber sido desplegadas; crea una nueva.
 

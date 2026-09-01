@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '@/components/providers/supabase-provider';
 import { TransactionForm } from '@/components/transactions/TransactionForm';
 import { Plus, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface Transaction {
@@ -261,7 +261,7 @@ export default function TransactionsPage() {
                   {transactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                       <td className="p-3 text-sm whitespace-nowrap">
-                        {format(new Date(tx.date), 'dd/MM/yyyy', { locale: es })}
+                        {format(parseISO(tx.date), 'dd/MM/yyyy', { locale: es })}
                       </td>
                       <td className="p-3 text-sm">
                         <p className="font-medium">{tx.description}</p>
