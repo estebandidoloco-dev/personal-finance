@@ -12,11 +12,11 @@ import {
   type NumberFormat,
   type RawCsvRow,
 } from '@/lib/csv/normalization';
+import { buildCategoryTree, flattenCategoryTree, type CategoryItem } from '@/lib/categories';
 
 type Step = 'upload' | 'mapping' | 'preview' | 'result';
 type PreviewStatus = 'valid' | 'invalid' | 'duplicate' | 'possible_duplicate';
 interface AccountOption { id: string; name: string; currency: string }
-interface CategoryOption { id: string; name: string; type: string }
 interface PreviewRow {
   row_number: number;
   original: RawCsvRow;
@@ -63,7 +63,7 @@ export default function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('upload');
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [accountId, setAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [sourceProvider, setSourceProvider] = useState('generic');
@@ -88,11 +88,11 @@ export default function ImportPage() {
     async function loadMetadata() {
       const [accountResult, categoryResult] = await Promise.all([
         supabase.from('accounts').select('id, name, currency').order('name'),
-        supabase.from('categories').select('id, name, type').order('name'),
+        supabase.from('categories').select('id, parent_id, name, type, budget_type, icon, color, is_system, sort_order, user_id').order('name'),
       ]);
       if (accountResult.error || categoryResult.error) return setError('No se pudieron cargar las cuentas o categorías.');
       setAccounts((accountResult.data ?? []) as AccountOption[]);
-      setCategories((categoryResult.data ?? []) as CategoryOption[]);
+      setCategories((categoryResult.data ?? []) as CategoryItem[]);
       if (accountResult.data?.length === 1) setAccountId(accountResult.data[0].id);
     }
     void loadMetadata();
@@ -183,7 +183,7 @@ export default function ImportPage() {
     {step === 'upload' && <div className="space-y-5">
       <div className="grid gap-4 rounded-lg border bg-white p-5 dark:bg-gray-800 sm:grid-cols-3">
         <label className="text-sm font-medium">Cuenta<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="mt-1 w-full rounded border px-3 py-2"><option value="">Seleccionar cuenta</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.currency})</option>)}</select></label>
-        <label className="text-sm font-medium">Categoría fija (opcional)<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="mt-1 w-full rounded border px-3 py-2"><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        <label className="text-sm font-medium">Categoría fija (opcional)<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="mt-1 w-full rounded border px-3 py-2"><option value="">Sin categoría</option>{flattenCategoryTree(buildCategoryTree(categories)).map((category) => <option key={category.id} value={category.id}>{'— '.repeat(category.depth)}{category.name}</option>)}</select></label>
         <label className="text-sm font-medium">Banco/proveedor<input value={sourceProvider} onChange={(event) => setSourceProvider(event.target.value)} maxLength={100} className="mt-1 w-full rounded border px-3 py-2" /></label>
       </div>
       <div className="rounded-lg border-2 border-dashed border-gray-300 p-12 text-center dark:border-gray-600"><FileText className="mx-auto mb-4 h-12 w-12 text-gray-400" /><p className="mb-2">Selecciona un CSV UTF-8 de hasta 5 MiB y 1000 filas.</p><p className="mb-4 text-sm text-gray-500">El archivo completo no se almacena.</p><input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleFile(file); }} /><button onClick={() => fileInputRef.current?.click()} disabled={!accountId} className="rounded bg-blue-600 px-6 py-2 text-white disabled:opacity-50">Seleccionar archivo</button></div>

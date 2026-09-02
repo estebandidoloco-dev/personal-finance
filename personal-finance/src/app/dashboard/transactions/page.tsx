@@ -6,6 +6,7 @@ import { TransactionForm } from '@/components/transactions/TransactionForm';
 import { Plus, Calendar } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { buildCategoryTree, flattenCategoryTree } from '@/lib/categories';
 
 interface Transaction {
   id: string;
@@ -46,7 +47,7 @@ export default function TransactionsPage() {
   const pageSize = 20;
   const [hasMore, setHasMore] = useState(true);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string; type: string }>>(
+  const [categories, setCategories] = useState<Array<{ id: string; name: string; type: string; parent_id: string | null; budget_type: string | null; icon: string | null; color: string | null; is_system: boolean; sort_order: number; user_id: string | null }>>(
     []
   );
 
@@ -100,7 +101,7 @@ export default function TransactionsPage() {
       supabase.from('accounts').select('id, name').eq('user_id', user.id).order('name'),
       supabase
         .from('categories')
-        .select('id, name, type')
+        .select('id, parent_id, name, type, budget_type, icon, color, is_system, sort_order, user_id')
         .or(`user_id.eq.${user.id},user_id.is.null`)
         .order('name'),
     ]);
@@ -109,7 +110,13 @@ export default function TransactionsPage() {
       return;
     }
     setAccounts(accRes.data ?? []);
-    setCategories(catRes.data ?? []);
+    setCategories(
+      (catRes.data ?? []).map((category) => ({
+        ...category,
+        is_system: category.is_system ?? false,
+        sort_order: category.sort_order ?? 0,
+      }))
+    );
   };
 
   useEffect(() => {
@@ -213,9 +220,9 @@ export default function TransactionsPage() {
           className="rounded-md border px-3 py-2 text-sm"
         >
           <option value="">Todas las categorías</option>
-          {categories.map((c) => (
+          {flattenCategoryTree(buildCategoryTree(categories)).map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}
+              {'— '.repeat(c.depth)}{c.name}
             </option>
           ))}
         </select>

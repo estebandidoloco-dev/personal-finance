@@ -36,6 +36,40 @@ export const transactionIdSchema = z.string().uuid();
 
 const accountTypeSchema = z.enum(['checking', 'savings', 'credit', 'cash', 'investment', 'other']);
 
+const categoryTypeSchema = z.enum(['expense', 'income', 'transfer', 'savings']);
+const budgetTypeSchema = z.enum(['need', 'want', 'savings']);
+const colorSchema = z.string().trim().regex(/^#[0-9a-f]{6}$/i, 'El color debe usar formato hexadecimal de seis dígitos');
+
+export const categoryCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  parent_id: uuidSchema.nullable().default(null),
+  type: categoryTypeSchema,
+  budget_type: budgetTypeSchema.nullable().default(null),
+  icon: z.string().trim().min(1).max(50).nullable().default(null),
+  color: colorSchema.nullable().default(null),
+  sort_order: z.number().int().min(-10_000).max(10_000).default(0),
+}).strict();
+
+export const categoryUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  parent_id: uuidSchema.nullable().optional(),
+  type: categoryTypeSchema.optional(),
+  budget_type: budgetTypeSchema.nullable().optional(),
+  icon: z.string().trim().min(1).max(50).nullable().optional(),
+  color: colorSchema.nullable().optional(),
+  sort_order: z.number().int().min(-10_000).max(10_000).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'Debe indicar al menos un campo editable');
+
+export const tagCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  color: colorSchema.nullable().default(null),
+}).strict();
+
+export const tagUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  color: colorSchema.nullable().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'Debe indicar al menos un campo editable');
+
 export const accountCreateSchema = z
   .object({
     name: z.string().trim().min(1).max(100),

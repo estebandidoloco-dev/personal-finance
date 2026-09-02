@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSupabase } from '@/components/providers/supabase-provider';
 import { X } from 'lucide-react';
+import { buildCategoryTree, flattenCategoryTree, type CategoryItem } from '@/lib/categories';
 
 interface TransactionFormProps {
   onClose: () => void;
@@ -32,9 +33,7 @@ export function TransactionForm({
 }: TransactionFormProps) {
   const { supabase } = useSupabase();
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; type: string }>>([]);
-  const [categories, setCategories] = useState<
-    Array<{ id: string; name: string; type: string; icon: string | null; color: string | null }>
-  >([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [tags, setTags] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(initialData?.tag_ids ?? []);
   const [metadataLoading, setMetadataLoading] = useState(true);
@@ -70,7 +69,7 @@ export function TransactionForm({
         supabase.from('accounts').select('id, name, type').eq('user_id', user.id).order('name'),
         supabase
           .from('categories')
-          .select('id, name, type, icon, color')
+          .select('id, parent_id, name, type, budget_type, icon, color, is_system, sort_order, user_id')
           .or(`user_id.is.null,user_id.eq.${user.id}`)
           .order('type')
           .order('sort_order'),
@@ -84,7 +83,13 @@ export function TransactionForm({
       }
 
       setAccounts(accRes.data ?? []);
-      setCategories(catRes.data ?? []);
+      setCategories(
+        (catRes.data ?? []).map((category) => ({
+          ...category,
+          is_system: category.is_system ?? false,
+          sort_order: category.sort_order ?? 0,
+        }))
+      );
       setTags(tagRes.data ?? []);
       setMetadataLoading(false);
     }
@@ -157,9 +162,11 @@ export function TransactionForm({
     }
   };
 
-  const expenseCategories = categories.filter((c) => c.type === 'expense');
-  const incomeCategories = categories.filter((c) => c.type === 'income');
-  const otherCategories = categories.filter((c) => !['expense', 'income'].includes(c.type));
+  const categoryOptions = flattenCategoryTree(
+    buildCategoryTree(
+      categories
+    )
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -246,30 +253,11 @@ export function TransactionForm({
               className="w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
               <option value="">Sin categoría</option>
-              <optgroup label="Gastos">
-                {expenseCategories.map((c) => (
-                  <option key={c.id} value={c.id} style={{ color: c.color ?? undefined }}>
-                    {c.icon ? `📁 ` : ''}
-                    {c.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Ingresos">
-                {incomeCategories.map((c) => (
-                  <option key={c.id} value={c.id} style={{ color: c.color ?? undefined }}>
-                    {c.icon ? `📈 ` : ''}
-                    {c.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Otros">
-                {otherCategories.map((c) => (
-                  <option key={c.id} value={c.id} style={{ color: c.color ?? undefined }}>
-                    {c.icon ? `🔄 ` : ''}
-                    {c.name}
-                  </option>
-                ))}
-              </optgroup>
+              {categoryOptions.map((c) => (
+                <option key={c.id} value={c.id} style={{ color: c.color ?? undefined }}>
+                  {'— '.repeat(c.depth)}{c.icon ? `${c.icon} ` : ''}{c.name}
+                </option>
+              ))}
             </select>
           </div>
 

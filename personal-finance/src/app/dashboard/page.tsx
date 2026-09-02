@@ -22,20 +22,26 @@ export default async function DashboardPage() {
   const accountsList = accounts ?? [];
 
   return (
-    <main className="mx-auto max-w-4xl p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <main className="mx-auto max-w-4xl p-4 sm:p-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <h1 className="text-2xl font-bold">Cuentas</h1>
         <Link
           href="/dashboard/accounts/new"
-          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          className="rounded bg-blue-600 px-4 py-2 text-center text-white hover:bg-blue-700"
         >
           + Nueva cuenta
         </Link>
         <Link
           href="/dashboard/import"
-          className="flex items-center gap-2 rounded bg-gray-600 px-4 py-2 text-white hover:bg-gray-700"
+          className="flex items-center justify-center gap-2 rounded bg-gray-600 px-4 py-2 text-white hover:bg-gray-700"
         >
           <Upload className="h-4 w-4" /> Importar CSV
+        </Link>
+        <Link href="/dashboard/categories" className="rounded border px-4 py-2 text-center hover:bg-gray-50 dark:hover:bg-gray-700">
+          Categorías
+        </Link>
+        <Link href="/dashboard/tags" className="rounded border px-4 py-2 text-center hover:bg-gray-50 dark:hover:bg-gray-700">
+          Etiquetas
         </Link>
       </div>
 
