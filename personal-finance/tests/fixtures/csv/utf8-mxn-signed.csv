@@ -1,0 +1,5 @@
+fecha,descripcion,importe,referencia,notas
+2026-09-01,Café y pan,"-$1,234.56",mx-001,Compra con acentos
+2026-09-02,Depósito nómina,"$1,234.56",mx-002,Ingreso
+2026-09-03,Compra entre paréntesis,"(1,234.56)",mx-003,Gasto
+

@@ -1,0 +1,4 @@
+date,description,debit,credit,external_id
+09/01/2026,Compra,200.00,,dc-001
+09/02/2026,Reembolso,,50.00,dc-002
+

@@ -183,35 +183,59 @@ export type Database = {
       csv_imports: {
         Row: {
           account_id: string;
+          completed_at: string | null;
           created_at: string | null;
           errors: Json | null;
-          filename: string;
+          file_hash: string;
+          file_name: string;
           id: string;
+          metadata: Json;
+          rows_duplicate: number;
+          rows_failed: number;
           rows_imported: number;
+          rows_invalid: number;
           rows_skipped: number;
           rows_total: number;
+          status: string;
+          updated_at: string;
           user_id: string;
         };
         Insert: {
           account_id: string;
+          completed_at?: string | null;
           created_at?: string | null;
           errors?: Json | null;
-          filename: string;
+          file_hash: string;
+          file_name: string;
           id?: string;
-          rows_imported: number;
-          rows_skipped: number;
+          metadata?: Json;
+          rows_duplicate?: number;
+          rows_failed?: number;
+          rows_imported?: number;
+          rows_invalid?: number;
+          rows_skipped?: number;
           rows_total: number;
+          status?: string;
+          updated_at?: string;
           user_id: string;
         };
         Update: {
           account_id?: string;
+          completed_at?: string | null;
           created_at?: string | null;
           errors?: Json | null;
-          filename?: string;
+          file_hash?: string;
+          file_name?: string;
           id?: string;
+          metadata?: Json;
+          rows_duplicate?: number;
+          rows_failed?: number;
           rows_imported?: number;
+          rows_invalid?: number;
           rows_skipped?: number;
           rows_total?: number;
+          status?: string;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [
@@ -493,14 +517,17 @@ export type Database = {
           category_id: string | null;
           created_at: string | null;
           currency: string | null;
+          csv_import_id: string | null;
           date: string;
           description: string;
           external_id: string | null;
           id: string;
+          import_match_hash: string | null;
           is_shared: boolean | null;
           kind: Database['public']['Enums']['transaction_kind'];
           notes: string | null;
           source: string | null;
+          source_provider: string | null;
           split_ratio: Json | null;
           status: string;
           updated_at: string | null;
@@ -512,14 +539,17 @@ export type Database = {
           category_id?: string | null;
           created_at?: string | null;
           currency?: string | null;
+          csv_import_id?: string | null;
           date: string;
           description: string;
           external_id?: string | null;
           id?: string;
+          import_match_hash?: string | null;
           is_shared?: boolean | null;
           kind: Database['public']['Enums']['transaction_kind'];
           notes?: string | null;
           source?: string | null;
+          source_provider?: string | null;
           split_ratio?: Json | null;
           status?: string | null;
           updated_at?: string | null;
@@ -531,14 +561,17 @@ export type Database = {
           category_id?: string | null;
           created_at?: string | null;
           currency?: string | null;
+          csv_import_id?: string | null;
           date?: string;
           description?: string;
           external_id?: string | null;
           id?: string;
+          import_match_hash?: string | null;
           is_shared?: boolean | null;
           kind?: Database['public']['Enums']['transaction_kind'];
           notes?: string | null;
           source?: string | null;
+          source_provider?: string | null;
           split_ratio?: Json | null;
           status?: string | null;
           updated_at?: string | null;
@@ -557,6 +590,13 @@ export type Database = {
             columns: ['category_id'];
             isOneToOne: false;
             referencedRelation: 'categories';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'transactions_csv_import_id_fkey';
+            columns: ['csv_import_id'];
+            isOneToOne: false;
+            referencedRelation: 'csv_imports';
             referencedColumns: ['id'];
           },
           {
@@ -584,6 +624,15 @@ export type Database = {
       };
     };
     Functions: {
+      csv_import_match_hash: {
+        Args: {
+          p_amount: number;
+          p_date: string;
+          p_description: string;
+          p_kind: Database['public']['Enums']['transaction_kind'];
+        };
+        Returns: string;
+      };
       create_financial_transaction: {
         Args: {
           p_account_id: string;
@@ -624,6 +673,24 @@ export type Database = {
       delete_financial_transaction: {
         Args: { p_id: string };
         Returns: string;
+      };
+      import_csv_transactions_batch: {
+        Args: { p_category_id: string | null; p_import_id: string; p_rows: Json };
+        Returns: {
+          error_code: string | null;
+          error_message: string | null;
+          result_status: string;
+          row_number: number;
+          transaction_id: string | null;
+        }[];
+      };
+      preview_csv_import_rows: {
+        Args: { p_account_id: string; p_rows: Json; p_source_provider: string };
+        Returns: {
+          possible_duplicate: boolean;
+          row_number: number;
+          strong_duplicate: boolean;
+        }[];
       };
       update_financial_transaction: {
         Args: {

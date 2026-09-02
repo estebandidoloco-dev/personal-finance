@@ -1,0 +1,7 @@
+fecha,descripcion,importe,external_id
+01/02/2026,Fecha ambigua,"1,234",
+31/02/2026,Fecha inválida,"1.234",
+03/02/2026,Duplicado legítimo,100.00,
+03/02/2026,Duplicado legítimo,100.00,
+,,, 
+
