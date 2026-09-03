@@ -154,6 +154,41 @@ Estas decisiones están aprobadas y no deben cambiarse sin autorización explíc
 - Cada importación debe conservar historial y contadores de resultado.
 - Una importación puede finalizar como `completed`, `partial` o `failed`.
 
+### P1.2: Categorías y etiquetas
+
+- El MVP incluye CRUD de categorías y etiquetas.
+- Las categorías globales son read-only.
+- Las categorías personales están protegidas por ownership.
+- `budgets.category_id` usa `ON DELETE RESTRICT`.
+- El trigger financiero de `transactions` solo se ejecuta ante cambios en `account_id`, `amount`, `kind` o `status`.
+- Los cambios no financieros, incluidos categoría, descripción, notas y metadatos, no alteran el balance.
+
+### MVP: MXN-only
+
+- La moneda del producto para el MVP es exclusivamente `MXN`.
+- Las columnas `currency` permanecen en PostgreSQL para conservar la capacidad futura del esquema.
+- Las nuevas cuentas creadas por el MVP deben usar `MXN`.
+- El MVP no incluye FX ni conversión de monedas.
+- El MVP no expone un selector de moneda.
+- Multicurrency queda fuera de alcance y requerirá una feature futura explícita.
+
+### Timezone del MVP
+
+- El timezone del producto es `America/Mexico_City`.
+- Las fechas financieras y bancarias se almacenan como PostgreSQL `DATE`.
+- Las fechas bancarias no deben sufrir conversiones UTC.
+- Un timezone configurable por perfil queda fuera del alcance actual.
+
+### P1.3: Dashboard financiero
+
+- El dashboard es read-only.
+- Solo las transacciones con `status = 'posted'` entran en las métricas.
+- El saldo actual no depende del periodo seleccionado.
+- `recent_transactions` representa las últimas 10 transacciones `posted` globales del usuario.
+- `recent_transactions` no depende del periodo seleccionado.
+- El contrato público del dashboard es MXN-only.
+- El contrato público no expone estructuras multicurrency.
+
 ## 5. Invariante contable obligatorio
 
 Para cada cuenta debe cumplirse siempre:
@@ -402,10 +437,13 @@ Una tarea está Done cuando:
 
 - el alcance aprobado está implementado;
 - el contrato entre capas está documentado;
-- la solución respeta P0.1, P0.2, P0.3 y P1.1;
+- la solución respeta P0.1, P0.2, P0.3, P1.1, P1.2 y las decisiones cerradas del MVP y P1.3 que le apliquen;
 - no rompe la invariancia contable;
 - la autenticación, autorización y RLS fueron revisadas;
 - no existen writes financieros no autorizados;
+- las cuentas nuevas del MVP solo pueden usar `MXN` y ninguna interfaz pública expone selección o agregación multicurrency;
+- las fechas financieras conservan semántica PostgreSQL `DATE` sin conversiones UTC y los periodos usan `America/Mexico_City`;
+- el dashboard mantiene el saldo actual independiente del periodo, limita sus métricas a transacciones `posted` y mantiene `recent_transactions` independiente del periodo;
 - las migraciones nuevas fueron revisadas y probadas localmente;
 - los estados de frontend están completos;
 - las pruebas relevantes pasan;

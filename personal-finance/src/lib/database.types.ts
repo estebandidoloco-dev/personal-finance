@@ -624,6 +624,10 @@ export type Database = {
       };
     };
     Functions: {
+      get_dashboard_summary: {
+        Args: { p_period: string };
+        Returns: Json;
+      };
       csv_import_match_hash: {
         Args: {
           p_amount: number;

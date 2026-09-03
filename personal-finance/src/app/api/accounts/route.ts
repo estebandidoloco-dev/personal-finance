@@ -47,7 +47,6 @@ export async function POST(req: NextRequest) {
       name: input.name,
       type: input.type,
       initial_balance: input.initial_balance,
-      currency: input.currency,
       is_shared: input.is_shared,
       institution: input.institution,
     })

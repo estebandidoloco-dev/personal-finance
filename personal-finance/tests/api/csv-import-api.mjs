@@ -29,10 +29,10 @@ const { data: account, error: accountError } = await supabase.from('accounts').i
   name: 'Cuenta API CSV',
   type: 'checking',
   initial_balance: 1000,
-  currency: 'MXN',
   is_shared: false,
-}).select('id').single();
+}).select('id, currency').single();
 assert.ifError(accountError);
+assert.equal(account.currency, 'MXN');
 
 const fixtureBytes = await readFile(new URL('../fixtures/csv/utf8-mxn-signed.csv', import.meta.url));
 const fileHash = createHash('sha256').update(fixtureBytes).digest('hex');
@@ -90,5 +90,9 @@ const { count, error: countError } = await supabase
   .from('transactions').select('*', { count: 'exact', head: true }).eq('account_id', account.id);
 assert.ifError(countError);
 assert.equal(count, 2);
+const { data: importedTransactions, error: transactionCurrencyError } = await supabase
+  .from('transactions').select('currency').eq('account_id', account.id);
+assert.ifError(transactionCurrencyError);
+assert.ok(importedTransactions.every((transaction) => transaction.currency === 'MXN'));
 
 console.log('API/UI shell PASS: auth, protected import page, preview, import, balance, exact-file reimport.');

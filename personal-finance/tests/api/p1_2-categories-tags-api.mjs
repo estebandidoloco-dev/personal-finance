@@ -66,7 +66,7 @@ const globalPatch = await request(`/api/categories/${global.id}`, {
 assert.equal(globalPatch.status, 403);
 assert.equal((await globalPatch.json()).code, 'category_read_only');
 
-const account = (await (await a.client.from('accounts').insert({ user_id: a.user.id, name: `P12 ${unique}`, type: 'checking', initial_balance: 1000, currency: 'MXN' }).select('id').single()).data);
+const account = (await (await a.client.from('accounts').insert({ user_id: a.user.id, name: `P12 ${unique}`, type: 'checking', initial_balance: 1000 }).select('id').single()).data);
 const transaction = (await a.client.rpc('create_financial_transaction', {
   p_account_id: account.id, p_kind: 'expense', p_amount: 100, p_currency: 'MXN', p_date: '2026-09-02',
   p_description: 'category delete', p_category_id: category.id, p_tag_ids: [], p_source: 'manual',

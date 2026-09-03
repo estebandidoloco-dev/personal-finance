@@ -62,12 +62,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .select()
     .single();
 
-  if (error?.code === '23514' && error.message.includes('currency')) {
-    return NextResponse.json(
-      { error: 'No puedes cambiar la moneda de una cuenta que ya tiene transacciones.' },
-      { status: 409 }
-    );
-  }
   if (error?.code === 'PGRST116') {
     return NextResponse.json({ error: 'Cuenta no encontrada.' }, { status: 404 });
   }

@@ -75,7 +75,6 @@ export const accountCreateSchema = z
     name: z.string().trim().min(1).max(100),
     type: accountTypeSchema,
     initial_balance: z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99),
-    currency: currencySchema.default('MXN'),
     is_shared: z.boolean().default(false),
     institution: z.string().trim().max(100).nullable().default(null),
   })
@@ -85,7 +84,6 @@ export const accountUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     type: accountTypeSchema.optional(),
-    currency: currencySchema.optional(),
     is_shared: z.boolean().optional(),
     institution: z.string().trim().max(100).nullable().optional(),
   })
