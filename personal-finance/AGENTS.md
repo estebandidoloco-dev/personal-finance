@@ -119,7 +119,7 @@ Estas decisiones están aprobadas y no deben cambiarse sin autorización explíc
 - RLS debe estar habilitado y ser explícito.
 - Las categorías globales son read-only.
 - `is_shared` no concede acceso.
-- No se implementará colaboración multiusuario en el MVP.
+- El dominio personal no se comparte; la colaboración MVP existe únicamente en el dominio P1.4 Household separado.
 
 ### P0.2: Modelo contable
 
@@ -188,6 +188,20 @@ Estas decisiones están aprobadas y no deben cambiarse sin autorización explíc
 - `recent_transactions` no depende del periodo seleccionado.
 - El contrato público del dashboard es MXN-only.
 - El contrato público no expone estructuras multicurrency.
+
+### P1.4: Household / finanzas en pareja
+
+- Membership es la única autoridad de acceso Household; `created_by_user_id`, `recorded_by_user_id` e `is_shared` no autorizan.
+- Un Household `active` tiene exactamente dos memberships `current`; cada usuario tiene como máximo una vigente.
+- El cierre es terminal, archiva a ambos miembros y conserva lectura histórica; `removed` no conserva acceso.
+- Los ledgers personal y Household permanecen separados. Las cuentas Household representan fondos comunes sin porcentajes de ownership ni tracking de contribuciones.
+- `personal_payer_user_id` identifica exclusivamente al miembro que adelantó fondos personales y participa en deuda.
+- `recorded_by_user_id` es auditoría derivada de `auth.uid()` y nunca atribuye aportación ni deuda.
+- Solo gastos personal-funded con source `posted` participan en balance interpersonal; fondos Household generan `0.00` de deuda.
+- Cada gasto tiene una sola fuente ledger, exactamente dos splits normalizados y suma exacta al importe fuente.
+- Los splits no modifican balances. Solo el ledger fuente actualiza la cuenta correspondiente.
+- Todos los contratos monetarios Household usan decimal strings canónicas con dos decimales; `-0.00` se rechaza.
+- P1.4 es MXN-only, sin FX, settlements, ownership porcentual, expulsión ordinaria ni grupos de tres miembros.
 
 ### Contratos monetarios y calendario del dashboard
 
