@@ -29,6 +29,11 @@ select pg_temp.assert_true('authenticated no puede INSERT currency',
   not has_column_privilege('authenticated', 'public.accounts', 'currency', 'INSERT'));
 select pg_temp.assert_true('authenticated no puede UPDATE currency',
   not has_column_privilege('authenticated', 'public.accounts', 'currency', 'UPDATE'));
+select pg_temp.assert_true('anon y PUBLIC no escriben currency',
+  not has_column_privilege('anon', 'public.accounts', 'currency', 'INSERT')
+  and not has_column_privilege('anon', 'public.accounts', 'currency', 'UPDATE')
+  and not has_column_privilege('public', 'public.accounts', 'currency', 'INSERT')
+  and not has_column_privilege('public', 'public.accounts', 'currency', 'UPDATE'));
 select pg_temp.assert_true('allowlist INSERT restante conservada',
   has_column_privilege('authenticated', 'public.accounts', 'user_id', 'INSERT')
   and has_column_privilege('authenticated', 'public.accounts', 'name', 'INSERT')
@@ -42,6 +47,38 @@ select pg_temp.assert_true('allowlist UPDATE restante conservada',
   and has_column_privilege('authenticated', 'public.accounts', 'is_shared', 'UPDATE')
   and has_column_privilege('authenticated', 'public.accounts', 'institution', 'UPDATE')
   and has_column_privilege('authenticated', 'public.accounts', 'last_synced_at', 'UPDATE'));
+select pg_temp.assert_true('columnas sensibles fuera de allowlists',
+  not has_column_privilege('authenticated', 'public.accounts', 'balance', 'INSERT')
+  and not has_column_privilege('authenticated', 'public.accounts', 'balance', 'UPDATE')
+  and not has_column_privilege('authenticated', 'public.accounts', 'created_at', 'INSERT')
+  and not has_column_privilege('authenticated', 'public.accounts', 'created_at', 'UPDATE')
+  and not has_column_privilege('authenticated', 'public.accounts', 'user_id', 'UPDATE')
+  and not has_column_privilege('authenticated', 'public.accounts', 'initial_balance', 'UPDATE'));
+select pg_temp.assert_true('allowlist INSERT es exacta', not exists (
+  select 1
+    from information_schema.column_privileges
+   where grantee = 'authenticated'
+     and table_schema = 'public'
+     and table_name = 'accounts'
+     and privilege_type = 'INSERT'
+     and column_name not in ('user_id', 'name', 'type', 'initial_balance', 'is_shared', 'institution')
+));
+select pg_temp.assert_true('allowlist UPDATE es exacta', not exists (
+  select 1
+    from information_schema.column_privileges
+   where grantee = 'authenticated'
+     and table_schema = 'public'
+     and table_name = 'accounts'
+     and privilege_type = 'UPDATE'
+     and column_name not in ('name', 'type', 'is_shared', 'institution', 'last_synced_at')
+));
+select pg_temp.assert_true('no existe CHECK permanente MXN', not exists (
+  select 1
+    from pg_constraint constraint_row
+   where constraint_row.conrelid = 'public.accounts'::regclass
+     and constraint_row.contype = 'c'
+     and pg_get_constraintdef(constraint_row.oid) ~* $$currency\s*=\s*'MXN'$$
+));
 
 insert into auth.users(id, aud, role, email, raw_user_meta_data, created_at, updated_at) values
   ('31111111-1111-1111-1111-111111111111', 'authenticated', 'authenticated', 'mxn-a@example.test', '{"display_name":"MXN A"}', now(), now()),
@@ -51,10 +88,9 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '31111111-1111-1111-1111-111111111111', true);
 
 insert into public.accounts(user_id, name, type, initial_balance, is_shared, institution)
-values (auth.uid(), 'Cuenta MXN', 'checking', 1000, false, 'Banco')
-returning id as mxn_account_id \gset
+values (auth.uid(), 'Cuenta MXN', 'checking', 1000, false, 'Banco');
 select pg_temp.assert_true('INSERT sin currency usa MXN', (
-  select currency = 'MXN' from public.accounts where id = :'mxn_account_id'
+  select currency = 'MXN' from public.accounts where name = 'Cuenta MXN'
 ));
 
 do $$ begin
@@ -79,34 +115,34 @@ end $$;
 
 update public.accounts
 set name = 'Cuenta actualizada', type = 'savings', is_shared = true, institution = null
-where id = :'mxn_account_id';
+where name = 'Cuenta MXN';
 select pg_temp.assert_true('otros campos aprobados funcionan', (
   select name = 'Cuenta actualizada' and type = 'savings' and is_shared and institution is null
-  from public.accounts where id = :'mxn_account_id'
+  from public.accounts where name = 'Cuenta actualizada'
 ));
 
 select set_config('request.jwt.claim.sub', '32222222-2222-2222-2222-222222222222', true);
 with updated as (
   update public.accounts set name = 'Ajena'
-  where id = :'mxn_account_id'
+  where name = 'Cuenta actualizada'
   returning 1
 )
 select pg_temp.assert_true('usuario B no actualiza cuenta A', (select count(*) = 0 from updated));
 
 select set_config('request.jwt.claim.sub', '31111111-1111-1111-1111-111111111111', true);
 select public.create_financial_transaction(
-  :'mxn_account_id', 'income', 100, 'MXN', '2026-09-02', 'Ingreso posted'
+  (select id from public.accounts where name = 'Cuenta actualizada'), 'income', 100, 'MXN', '2026-09-02', 'Ingreso posted'
 );
 select public.create_financial_transaction(
-  p_account_id => :'mxn_account_id', p_kind => 'expense', p_amount => 50,
+  p_account_id => (select id from public.accounts where name = 'Cuenta actualizada'), p_kind => 'expense', p_amount => 50,
   p_currency => 'MXN', p_date => '2026-09-02', p_description => 'Gasto pending', p_status => 'pending'
 );
 select public.create_financial_transaction(
-  p_account_id => :'mxn_account_id', p_kind => 'expense', p_amount => 25,
+  p_account_id => (select id from public.accounts where name = 'Cuenta actualizada'), p_kind => 'expense', p_amount => 25,
   p_currency => 'MXN', p_date => '2026-09-02', p_description => 'Gasto cancelled', p_status => 'cancelled'
 );
 select pg_temp.assert_true('solo posted actualiza balance', (
-  select balance = 1100 from public.accounts where id = :'mxn_account_id'
+  select balance = 1100 from public.accounts where name = 'Cuenta actualizada'
 ));
 
 do $$ begin
@@ -123,7 +159,7 @@ end $$;
 
 select pg_temp.assert_true('reconciliaciÃ³n drift cero', (
   select drift = 0 from public.account_balance_reconciliation
-  where account_id = :'mxn_account_id'
+  where account_id = (select id from public.accounts where name = 'Cuenta actualizada')
 ));
 
 reset role;

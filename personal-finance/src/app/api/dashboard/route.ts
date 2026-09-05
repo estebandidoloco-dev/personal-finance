@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiError } from '@/lib/api/errors';
 import { createClient } from '@/lib/supabase/server';
-import { dashboardPeriodSchema } from '@/lib/validation/dashboard';
+import { dashboardPeriodSchema, dashboardResponseSchema } from '@/lib/validation/dashboard';
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -13,7 +13,20 @@ export async function GET(request: NextRequest) {
     return apiError('invalid_period', 'El periodo seleccionado no es válido.', 400);
   }
 
-  const { data, error } = await supabase.rpc('get_dashboard_summary', { p_period: period.data });
+  const { data: rpcData, error } = await supabase.rpc('get_dashboard_summary', {
+    p_period: period.data,
+  });
   if (error) return apiError('invalid_request', 'No se pudo cargar el dashboard.', 500);
-  return NextResponse.json(data);
+
+  const data: unknown = rpcData;
+  const parsed = dashboardResponseSchema.safeParse(data);
+  if (!parsed.success) {
+    return apiError(
+      'invalid_dashboard_response',
+      'La respuesta del dashboard no cumple el contrato esperado.',
+      500
+    );
+  }
+
+  return NextResponse.json(parsed.data);
 }

@@ -1,35 +1,57 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createClient } from '@supabase/supabase-js';
+import { connect as connectPostgres } from '../concurrency/mxn-only-migration-concurrency.mjs';
 
-const envText = await readFile(new URL('../../.env.local', import.meta.url), 'utf8');
-const env = Object.fromEntries(envText.split(/\r?\n/u).filter((line) => line && !line.startsWith('#')).map((line) => {
-  const separator = line.indexOf('=');
-  return [line.slice(0, separator), line.slice(separator + 1)];
-}));
-assert.ok(env.NEXT_PUBLIC_SUPABASE_URL?.startsWith('http://127.0.0.1:'), 'Only local Supabase is allowed.');
-const baseUrl = 'http://localhost:3000';
+let supabaseUrlText = process.env.NEXT_PUBLIC_SUPABASE_URL;
+let anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+if (!supabaseUrlText || !anonKey) {
+  try {
+    const envText = await readFile(new URL('../../.env.local', import.meta.url), 'utf8');
+    const fileEnv = Object.fromEntries(envText.split(/\r?\n/u).filter((line) => line && !line.startsWith('#')).map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    }));
+    supabaseUrlText ??= fileEnv.NEXT_PUBLIC_SUPABASE_URL;
+    anonKey ??= fileEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+assert.ok(supabaseUrlText && anonKey, 'Local Supabase URL and anon key are required in process.env or .env.local.');
+const supabaseUrl = new URL(supabaseUrlText);
+assert.equal(supabaseUrl.protocol, 'http:', 'Local Supabase must use HTTP.');
+assert.ok(['127.0.0.1', 'localhost'].includes(supabaseUrl.hostname), 'Only local Supabase is allowed.');
+assert.equal(supabaseUrl.port, '54321', 'Expected the configured local Supabase API port.');
+const baseUrl = new URL(process.env.TEST_APP_URL ?? 'http://localhost:3000');
+assert.equal(baseUrl.protocol, 'http:', 'The local Next.js server must use HTTP.');
+assert.ok(['127.0.0.1', 'localhost'].includes(baseUrl.hostname), 'Only a local Next.js server is allowed.');
+assert.equal(baseUrl.port, '3000', 'Expected the local Next.js test port.');
 const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const createdUsers = [];
 
 async function makeUser(label) {
-  const client = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const client = createClient(supabaseUrlText, anonKey);
   const { data, error } = await client.auth.signUp({
     email: `p12-${label}-${unique}@example.test`, password: 'Local-test-password-123!',
     options: { data: { display_name: `P12 ${label}` } },
   });
   assert.ifError(error);
   assert.ok(data.session && data.user);
-  const storageKey = `sb-${new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
-  return { client, user: data.user, cookie: `${storageKey}=base64-${Buffer.from(JSON.stringify(data.session)).toString('base64url')}` };
+  const storageKey = `sb-${supabaseUrl.hostname.split('.')[0]}-auth-token`;
+  const fixture = { client, user: data.user, cookie: `${storageKey}=base64-${Buffer.from(JSON.stringify(data.session)).toString('base64url')}` };
+  createdUsers.push(fixture);
+  return fixture;
 }
 
 async function request(path, options = {}, cookie) {
-  return fetch(`${baseUrl}${path}`, {
+  return fetch(new URL(path, baseUrl), {
     ...options,
     headers: { 'content-type': 'application/json', cookie, ...(options.headers ?? {}) },
   });
 }
 
+try {
 const a = await makeUser('a');
 const b = await makeUser('b');
 const categoriesA = await (await request('/api/categories', {}, a.cookie)).json();
@@ -96,3 +118,30 @@ const deletedTag = await request(`/api/tags/${tag.id}`, { method: 'DELETE' }, a.
 assert.equal(deletedTag.status, 204);
 
 console.log('P1.2 API PASS: category scope, read-only globals, foreign 404, budget 409, SET NULL balance, tag duplicate/delete.');
+} finally {
+  if (createdUsers.length > 0) {
+    const cleanup = await connectPostgres();
+    const userIds = createdUsers.map((fixture) => `'${fixture.user.id}'`).join(',');
+    try {
+      await cleanup.query(`
+        begin;
+        delete from public.transactions where user_id in (${userIds});
+        delete from public.budgets where user_id in (${userIds});
+        delete from public.goals where user_id in (${userIds});
+        delete from public.subscriptions where user_id in (${userIds});
+        delete from public.csv_imports where user_id in (${userIds});
+        delete from public.split_rules where user_id in (${userIds});
+        delete from public.tags where user_id in (${userIds});
+        delete from public.categories where user_id in (${userIds});
+        delete from public.accounts where user_id in (${userIds});
+        delete from auth.users where id in (${userIds});
+        commit;
+      `);
+    } catch (error) {
+      try { await cleanup.query('rollback'); } catch {}
+      throw error;
+    } finally {
+      cleanup.close();
+    }
+  }
+}

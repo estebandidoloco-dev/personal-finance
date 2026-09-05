@@ -189,6 +189,14 @@ Estas decisiones están aprobadas y no deben cambiarse sin autorización explíc
 - El contrato público del dashboard es MXN-only.
 - El contrato público no expone estructuras multicurrency.
 
+### Contratos monetarios y calendario del dashboard
+
+- Todo importe del dashboard es un decimal string exacto con dos posiciones; nunca se convierte a JavaScript `number`.
+- Los importes signed aceptan `-0.01`, pero `-0.00` no es una representación canónica válida.
+- Los agregados deben conservar exactitud aunque sus centavos excedan `Number.MAX_SAFE_INTEGER`.
+- `time_series.points` cubre siempre cada fecha del periodo, incluso sin movimientos; los días vacíos usan `"0.00"`.
+- `last_30_days` contiene siempre exactamente 30 puntos consecutivos.
+
 ## 5. Invariante contable obligatorio
 
 Para cada cuenta debe cumplirse siempre:
@@ -280,6 +288,8 @@ No se acepta:
 - No aplicar migraciones a Supabase remoto.
 - Antes de proponer una migración, revisar reconciliación contable e impacto sobre datos históricos.
 - Las nuevas migraciones deben probarse únicamente contra Supabase local o mediante revisión estática si el entorno local no está disponible.
+
+- Las migraciones que reafirmen la frontera MXN deben revalidar datos y privilegios bajo un lock de tabla que impida escritores concurrentes cuando corresponda.
 
 ## 8. Reglas de Git
 

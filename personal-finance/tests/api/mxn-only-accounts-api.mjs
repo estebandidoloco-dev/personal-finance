@@ -1,16 +1,29 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createClient } from '@supabase/supabase-js';
+import { connect as connectPostgres } from '../concurrency/mxn-only-migration-concurrency.mjs';
 
-const envText = await readFile(new URL('../../.env.local', import.meta.url), 'utf8');
-const env = Object.fromEntries(envText.split(/\r?\n/u).filter((line) => line && !line.startsWith('#')).map((line) => {
-  const separator = line.indexOf('=');
-  return [line.slice(0, separator), line.slice(separator + 1)];
-}));
-assert.ok(env.NEXT_PUBLIC_SUPABASE_URL?.startsWith('http://127.0.0.1:'), 'Only local Supabase is allowed.');
+let env = { ...process.env };
+try {
+  const envText = await readFile(new URL('../../.env.local', import.meta.url), 'utf8');
+  env = {
+    ...env,
+    ...Object.fromEntries(envText.split(/\r?\n/u).filter((line) => line && !line.startsWith('#')).map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    })),
+  };
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
+const supabaseUrl = new URL(env.NEXT_PUBLIC_SUPABASE_URL);
+assert.ok(['127.0.0.1', 'localhost'].includes(supabaseUrl.hostname), 'Only local Supabase is allowed.');
+assert.equal(supabaseUrl.port, '54321', 'Expected the configured local Supabase API port.');
 
-const baseUrl = 'http://localhost:3000';
+const baseUrl = new URL(process.env.TEST_APP_URL ?? 'http://localhost:3000');
+assert.ok(['127.0.0.1', 'localhost'].includes(baseUrl.hostname), 'Only a local Next.js server is allowed.');
 const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const createdUsers = [];
 
 async function makeUser(label) {
   const client = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -22,15 +35,17 @@ async function makeUser(label) {
   assert.ifError(error);
   assert.ok(data.session && data.user);
   const storageKey = `sb-${new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
-  return {
+  const fixture = {
     client,
     user: data.user,
     cookie: `${storageKey}=base64-${Buffer.from(JSON.stringify(data.session)).toString('base64url')}`,
   };
+  createdUsers.push(fixture);
+  return fixture;
 }
 
 async function request(path, options, cookie) {
-  return fetch(`${baseUrl}${path}`, {
+  return fetch(new URL(path, baseUrl), {
     ...options,
     headers: { 'content-type': 'application/json', cookie, ...(options.headers ?? {}) },
   });
@@ -77,5 +92,17 @@ const foreignPatch = await request(`/api/accounts/${account.id}`, {
   method: 'PATCH', body: JSON.stringify({ name: 'No autorizada' }),
 }, b.cookie);
 assert.equal(foreignPatch.status, 404);
+
+for (const fixture of createdUsers) {
+  const { error } = await fixture.client.from('accounts').delete().eq('user_id', fixture.user.id);
+  assert.ifError(error);
+}
+const cleanup = await connectPostgres();
+try {
+  const userIds = createdUsers.map((fixture) => `'${fixture.user.id}'`).join(',');
+  await cleanup.query(`delete from auth.users where id in (${userIds})`);
+} finally {
+  cleanup.close();
+}
 
 console.log('Accounts MXN API PASS: default MXN, explicit currency rejected, approved fields and ownership.');

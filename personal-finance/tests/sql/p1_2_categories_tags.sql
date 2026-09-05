@@ -1,3 +1,58 @@
+\set ON_ERROR_STOP on
+
+begin;
+
+-- Make historical fixed fixtures rerunnable without deleting persistent data.
+do $$
+begin
+  if exists (
+    select 1 from auth.users
+     where id in (
+       '11111111-1111-1111-1111-111111111111',
+       '22222222-2222-2222-2222-222222222222'
+     )
+       and email not in (
+         'csv-a@example.test', 'csv-b@example.test',
+         'p12-a@example.test', 'p12-b@example.test',
+         'dashboard-a@example.test', 'dashboard-b@example.test'
+       )
+  ) then
+    raise exception 'Refusing to replace non-test users that collide with P1.2 fixture IDs';
+  end if;
+end
+$$;
+
+delete from public.transactions where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.budgets where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.goals where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.subscriptions where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.csv_imports where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.split_rules where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.tags where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.categories where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from public.accounts where user_id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+delete from auth.users where id in (
+  '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+);
+
 create temporary table test_results(test_name text primary key, passed boolean not null);
 grant select, insert on test_results to authenticated;
 
@@ -146,3 +201,5 @@ select pg_temp.assert_true('balance sin drift', (
 reset role;
 select test_name, 'PASS' as result from test_results order by test_name;
 select count(*) as total_pass from test_results;
+
+rollback;
