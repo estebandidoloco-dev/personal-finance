@@ -34,19 +34,15 @@ select pg_temp.assert_true('anon y PUBLIC no escriben currency',
   and not has_column_privilege('anon', 'public.accounts', 'currency', 'UPDATE')
   and not has_column_privilege('public', 'public.accounts', 'currency', 'INSERT')
   and not has_column_privilege('public', 'public.accounts', 'currency', 'UPDATE'));
-select pg_temp.assert_true('allowlist INSERT restante conservada',
-  has_column_privilege('authenticated', 'public.accounts', 'user_id', 'INSERT')
-  and has_column_privilege('authenticated', 'public.accounts', 'name', 'INSERT')
-  and has_column_privilege('authenticated', 'public.accounts', 'type', 'INSERT')
-  and has_column_privilege('authenticated', 'public.accounts', 'initial_balance', 'INSERT')
-  and has_column_privilege('authenticated', 'public.accounts', 'is_shared', 'INSERT')
-  and has_column_privilege('authenticated', 'public.accounts', 'institution', 'INSERT'));
+select pg_temp.assert_true('INSERT directo cerrado completamente',
+  not has_table_privilege('authenticated', 'public.accounts', 'INSERT')
+  and not has_any_column_privilege('authenticated', 'public.accounts', 'INSERT'));
 select pg_temp.assert_true('allowlist UPDATE restante conservada',
   has_column_privilege('authenticated', 'public.accounts', 'name', 'UPDATE')
   and has_column_privilege('authenticated', 'public.accounts', 'type', 'UPDATE')
   and has_column_privilege('authenticated', 'public.accounts', 'is_shared', 'UPDATE')
   and has_column_privilege('authenticated', 'public.accounts', 'institution', 'UPDATE')
-  and has_column_privilege('authenticated', 'public.accounts', 'last_synced_at', 'UPDATE'));
+  and not has_column_privilege('authenticated', 'public.accounts', 'last_synced_at', 'UPDATE'));
 select pg_temp.assert_true('columnas sensibles fuera de allowlists',
   not has_column_privilege('authenticated', 'public.accounts', 'balance', 'INSERT')
   and not has_column_privilege('authenticated', 'public.accounts', 'balance', 'UPDATE')
@@ -54,14 +50,13 @@ select pg_temp.assert_true('columnas sensibles fuera de allowlists',
   and not has_column_privilege('authenticated', 'public.accounts', 'created_at', 'UPDATE')
   and not has_column_privilege('authenticated', 'public.accounts', 'user_id', 'UPDATE')
   and not has_column_privilege('authenticated', 'public.accounts', 'initial_balance', 'UPDATE'));
-select pg_temp.assert_true('allowlist INSERT es exacta', not exists (
+select pg_temp.assert_true('allowlist INSERT permanece vacía', not exists (
   select 1
     from information_schema.column_privileges
    where grantee = 'authenticated'
      and table_schema = 'public'
      and table_name = 'accounts'
      and privilege_type = 'INSERT'
-     and column_name not in ('user_id', 'name', 'type', 'initial_balance', 'is_shared', 'institution')
 ));
 select pg_temp.assert_true('allowlist UPDATE es exacta', not exists (
   select 1
@@ -70,7 +65,7 @@ select pg_temp.assert_true('allowlist UPDATE es exacta', not exists (
      and table_schema = 'public'
      and table_name = 'accounts'
      and privilege_type = 'UPDATE'
-     and column_name not in ('name', 'type', 'is_shared', 'institution', 'last_synced_at')
+     and column_name not in ('name', 'type', 'is_shared', 'institution')
 ));
 select pg_temp.assert_true('no existe CHECK permanente MXN', not exists (
   select 1
@@ -87,21 +82,20 @@ insert into auth.users(id, aud, role, email, raw_user_meta_data, created_at, upd
 set role authenticated;
 select set_config('request.jwt.claim.sub', '31111111-1111-1111-1111-111111111111', true);
 
-insert into public.accounts(user_id, name, type, initial_balance, is_shared, institution)
-values (auth.uid(), 'Cuenta MXN', 'checking', 1000, false, 'Banco');
-select pg_temp.assert_true('INSERT sin currency usa MXN', (
-  select currency = 'MXN' from public.accounts where name = 'Cuenta MXN'
-));
-
 do $$ begin
   begin
-    insert into public.accounts(user_id, name, type, initial_balance, currency)
-    values (auth.uid(), 'Bypass USD', 'checking', 0, 'USD');
-    raise exception 'explicit currency insert accepted';
+    insert into public.accounts(user_id, name, type, initial_balance)
+    values (auth.uid(), 'Bypass rounded', 'checking', 1.235);
+    raise exception 'direct account insert accepted';
   exception when insufficient_privilege then
-    insert into test_results values ('INSERT directo con currency rechazado', true);
+    insert into test_results values ('INSERT directo rechazado', true);
   end;
 end $$;
+
+select public.create_personal_account('Cuenta MXN', 'checking', '1000.00', false, 'Banco');
+select pg_temp.assert_true('RPC exacta crea cuenta MXN', (
+  select currency = 'MXN' and balance = 1000 from public.accounts where name = 'Cuenta MXN'
+));
 
 do $$ begin
   begin
@@ -130,16 +124,16 @@ with updated as (
 select pg_temp.assert_true('usuario B no actualiza cuenta A', (select count(*) = 0 from updated));
 
 select set_config('request.jwt.claim.sub', '31111111-1111-1111-1111-111111111111', true);
-select public.create_financial_transaction(
-  (select id from public.accounts where name = 'Cuenta actualizada'), 'income', 100, 'MXN', '2026-09-02', 'Ingreso posted'
+select public.create_personal_transaction_exact(
+  (select id from public.accounts where name = 'Cuenta actualizada'), 'income', '100.00', '2026-09-02', 'Ingreso posted'
 );
-select public.create_financial_transaction(
-  p_account_id => (select id from public.accounts where name = 'Cuenta actualizada'), p_kind => 'expense', p_amount => 50,
-  p_currency => 'MXN', p_date => '2026-09-02', p_description => 'Gasto pending', p_status => 'pending'
+select public.create_personal_transaction_exact(
+  p_account_id => (select id from public.accounts where name = 'Cuenta actualizada'), p_kind => 'expense', p_amount => '50.00',
+  p_date => '2026-09-02', p_description => 'Gasto pending', p_status => 'pending'
 );
-select public.create_financial_transaction(
-  p_account_id => (select id from public.accounts where name = 'Cuenta actualizada'), p_kind => 'expense', p_amount => 25,
-  p_currency => 'MXN', p_date => '2026-09-02', p_description => 'Gasto cancelled', p_status => 'cancelled'
+select public.create_personal_transaction_exact(
+  p_account_id => (select id from public.accounts where name = 'Cuenta actualizada'), p_kind => 'expense', p_amount => '25.00',
+  p_date => '2026-09-02', p_description => 'Gasto cancelled', p_status => 'cancelled'
 );
 select pg_temp.assert_true('solo posted actualiza balance', (
   select balance = 1100 from public.accounts where name = 'Cuenta actualizada'
@@ -152,8 +146,8 @@ do $$ begin
       'expense', 1, 'USD', '2026-09-02', 'Moneda incompatible'
     );
     raise exception 'mismatched transaction currency accepted';
-  exception when check_violation then
-    insert into test_results values ('transaction currency incompatible rechazada', true);
+  exception when insufficient_privilege then
+    insert into test_results values ('RPC numérica histórica rechazada', true);
   end;
 end $$;
 

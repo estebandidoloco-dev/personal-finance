@@ -40,23 +40,21 @@ const { data: auth, error: authError } = await supabase.auth.signUp({
 });
 assert.ifError(authError);
 assert.ok(auth.session && auth.user);
+const storageKey = `sb-${supabaseUrl.hostname.split('.')[0]}-auth-token`;
+const cookieValue = `base64-${Buffer.from(JSON.stringify(auth.session), 'utf8').toString('base64url')}`;
+const cookie = `${storageKey}=${cookieValue}`;
 
 try {
-const { data: account, error: accountError } = await supabase.from('accounts').insert({
-  user_id: auth.user.id,
-  name: 'Cuenta API CSV',
-  type: 'checking',
-  initial_balance: 1000,
-  is_shared: false,
-}).select('id, currency').single();
-assert.ifError(accountError);
+const accountResponse = await fetch(new URL('/api/accounts', baseUrl), {
+  method: 'POST', headers: { 'content-type': 'application/json', cookie },
+  body: JSON.stringify({ name: 'Cuenta API CSV', type: 'checking', initial_balance: '1000.00', is_shared: false }),
+});
+assert.equal(accountResponse.status, 201);
+const account = await accountResponse.json();
 assert.equal(account.currency, 'MXN');
 
 const fixtureBytes = await readFile(new URL('../fixtures/csv/utf8-mxn-signed.csv', import.meta.url));
 const fileHash = createHash('sha256').update(fixtureBytes).digest('hex');
-const storageKey = `sb-${supabaseUrl.hostname.split('.')[0]}-auth-token`;
-const cookieValue = `base64-${Buffer.from(JSON.stringify(auth.session), 'utf8').toString('base64url')}`;
-const cookie = `${storageKey}=${cookieValue}`;
 const payload = {
   account_id: account.id,
   category_id: null,

@@ -222,11 +222,11 @@ begin
 end
 $$;
 
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', 10, 'MXN', '2026-09-09', 'Manual idéntica'
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', '10.00', '2026-09-09', 'Manual idéntica'
 );
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', 10, 'MXN', '2026-09-09', 'Manual idéntica'
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', '10.00', '2026-09-09', 'Manual idéntica'
 );
 select pg_temp.assert_true('transacciones manuales idénticas permitidas', (
   select count(*) = 2 from public.transactions where source = 'manual' and description = 'Manual idéntica'

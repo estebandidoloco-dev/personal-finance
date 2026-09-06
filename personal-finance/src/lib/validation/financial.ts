@@ -1,15 +1,24 @@
 import { z } from 'zod';
 
 const uuidSchema = z.string().uuid();
-const currencySchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^[A-Z]{3}$/, 'La moneda debe tener tres letras mayúsculas');
+const unsignedMoneySchema = z.string().regex(/^(0|[1-9]\d{0,11})\.\d{2}$/);
+const positiveMoneySchema = unsignedMoneySchema.refine((value) => value !== '0.00');
+const signedMoneySchema = z.string().regex(/^-?(0|[1-9]\d{0,11})\.\d{2}$/)
+  .refine((value) => value !== '-0.00');
+function isCalendarDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
+}
 const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe usar YYYY-MM-DD')
-  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), 'Fecha inválida');
+  .refine(isCalendarDate, 'Fecha inválida');
 const tagIdsSchema = z
   .array(uuidSchema)
   .max(50, 'Una transacción puede tener como máximo 50 etiquetas')
@@ -20,8 +29,7 @@ export const transactionMutationSchema = z
     account_id: uuidSchema,
     category_id: uuidSchema.nullable().default(null),
     kind: z.enum(['income', 'expense']),
-    amount: z.number().finite().positive().max(999_999_999_999.99),
-    currency: currencySchema,
+    amount: positiveMoneySchema,
     date: dateSchema,
     description: z.string().trim().min(1).max(200),
     notes: z.string().trim().max(2000).nullable().default(null),
@@ -74,7 +82,7 @@ export const accountCreateSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     type: accountTypeSchema,
-    initial_balance: z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99),
+    initial_balance: signedMoneySchema,
     is_shared: z.boolean().default(false),
     institution: z.string().trim().max(100).nullable().default(null),
   })
@@ -89,6 +97,61 @@ export const accountUpdateSchema = z
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'No hay campos editables');
+
+const nullableTimestampSchema = z.string().datetime({ offset: true }).nullable();
+export const personalAccountResponseSchema = z.object({
+  id: uuidSchema,
+  user_id: uuidSchema,
+  name: z.string(),
+  type: accountTypeSchema,
+  initial_balance: signedMoneySchema,
+  balance: signedMoneySchema,
+  currency: z.literal('MXN'),
+  is_shared: z.boolean().nullable(),
+  institution: z.string().nullable(),
+  created_at: nullableTimestampSchema,
+  last_synced_at: nullableTimestampSchema,
+}).strict();
+export const personalTransactionResponseSchema = z.object({
+  id: uuidSchema,
+  user_id: uuidSchema,
+  account_id: uuidSchema,
+  category_id: uuidSchema.nullable(),
+  kind: z.enum(['income', 'expense']),
+  amount: positiveMoneySchema,
+  currency: z.literal('MXN'),
+  date: dateSchema,
+  description: z.string(),
+  notes: z.string().nullable(),
+  is_shared: z.boolean().nullable(),
+  split_ratio: z.json().nullable(),
+  status: z.enum(['pending', 'posted', 'cancelled', 'duplicate']),
+  source: z.string().nullable(),
+  source_provider: z.string().nullable(),
+  external_id: z.string().nullable(),
+  import_match_hash: z.string().nullable(),
+  csv_import_id: uuidSchema.nullable(),
+  created_at: nullableTimestampSchema,
+  updated_at: nullableTimestampSchema,
+  category: z.object({
+    id: uuidSchema,
+    name: z.string(),
+    icon: z.string().nullable(),
+    color: z.string().nullable(),
+    type: categoryTypeSchema,
+  }).strict().nullable(),
+  tags: z.array(z.object({
+    tag: z.object({ id: uuidSchema, name: z.string(), color: z.string().nullable() }).strict(),
+  }).strict()),
+}).strict();
+export const transactionListQuerySchema = z.object({
+  account_id: uuidSchema.optional(),
+  category_id: uuidSchema.optional(),
+  start_date: dateSchema.optional(),
+  end_date: dateSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+}).strict();
 
 export function zodErrorResponse(error: z.ZodError) {
   return {

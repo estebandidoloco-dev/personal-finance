@@ -47,6 +47,35 @@ test('interpersonal balance contract accepts unbounded exact aggregate strings',
   }
 });
 
+test('interpersonal balance safeParse never throws for malformed money', () => {
+  for (const invalid of ['1e16', '1,000.00', ' 1.00', '1.0', '-0.00']) {
+    assert.doesNotThrow(() => {
+      householdBalanceResponseSchema.safeParse({
+        household_id: baseExpense.household_id,
+        currency: 'MXN',
+        positions: [
+          { user_id: userA, amount: invalid },
+          { user_id: userB, amount: '0.00' },
+        ],
+        owed_by_user_id: null,
+        owed_to_user_id: null,
+        amount: invalid,
+      });
+    });
+    assert.equal(householdBalanceResponseSchema.safeParse({
+      household_id: baseExpense.household_id,
+      currency: 'MXN',
+      positions: [
+        { user_id: userA, amount: invalid },
+        { user_id: userB, amount: '0.00' },
+      ],
+      owed_by_user_id: null,
+      owed_to_user_id: null,
+      amount: invalid,
+    }).success, false, invalid);
+  }
+});
+
 test('financial DATE validation does not use UTC conversion', () => {
   assert.equal(financialDateSchema.safeParse('2028-02-29').success, true);
   for (const value of ['2026-02-29', '2026-13-01', '2026-04-31', '2026-09-05T00:00:00Z']) {

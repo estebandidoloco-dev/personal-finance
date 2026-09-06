@@ -135,9 +135,9 @@ declare
   balance_payload jsonb;
 begin
   for iteration in 1..1001 loop
-    perform public.create_financial_transaction(
+    perform public.create_personal_transaction_exact(
       p_account_id := '54100000-0000-4000-8000-000000000003',
-      p_kind := 'income', p_amount := 999999999999.99, p_currency := 'MXN',
+      p_kind := 'income', p_amount := '999999999999.99',
       p_date := '2026-09-06', p_description := 'Overflow funding'
     );
     perform public.create_shared_expense(

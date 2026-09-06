@@ -88,11 +88,19 @@ const globalPatch = await request(`/api/categories/${global.id}`, {
 assert.equal(globalPatch.status, 403);
 assert.equal((await globalPatch.json()).code, 'category_read_only');
 
-const account = (await (await a.client.from('accounts').insert({ user_id: a.user.id, name: `P12 ${unique}`, type: 'checking', initial_balance: 1000 }).select('id').single()).data);
-const transaction = (await a.client.rpc('create_financial_transaction', {
-  p_account_id: account.id, p_kind: 'expense', p_amount: 100, p_currency: 'MXN', p_date: '2026-09-02',
-  p_description: 'category delete', p_category_id: category.id, p_tag_ids: [], p_source: 'manual',
-})).data;
+const accountResponse = await request('/api/accounts', {
+  method: 'POST', body: JSON.stringify({ name: `P12 ${unique}`, type: 'checking', initial_balance: '1000.00' }),
+}, a.cookie);
+assert.equal(accountResponse.status, 201);
+const account = await accountResponse.json();
+const transactionResponse = await request('/api/transactions', {
+  method: 'POST', body: JSON.stringify({
+    account_id: account.id, kind: 'expense', amount: '100.00', date: '2026-09-02',
+    description: 'category delete', category_id: category.id,
+  }),
+}, a.cookie);
+assert.equal(transactionResponse.status, 201);
+const transaction = await transactionResponse.json();
 const budget = (await a.client.from('budgets').insert({ user_id: a.user.id, category_id: category.id, month: '2026-09-01', amount: 200 }).select('id').single()).data;
 assert.ok(budget);
 const blocked = await request(`/api/categories/${category.id}`, { method: 'DELETE' }, a.cookie);

@@ -1158,6 +1158,32 @@ export type Database = {
         Returns: string
       }
       close_household_account: { Args: { p_account_id: string }; Returns: Json }
+      create_personal_account: {
+        Args: {
+          p_name: string
+          p_type: string
+          p_initial_balance: string
+          p_is_shared?: boolean
+          p_institution?: string | null
+        }
+        Returns: Json
+      }
+      create_personal_transaction_exact: {
+        Args: {
+          p_account_id: string
+          p_kind: Database["public"]["Enums"]["transaction_kind"]
+          p_amount: string
+          p_date: string
+          p_description: string
+          p_category_id?: string | null
+          p_notes?: string | null
+          p_is_shared?: boolean
+          p_split_ratio?: Json | null
+          p_status?: string
+          p_tag_ids?: string[]
+        }
+        Returns: Json
+      }
       create_financial_transaction: {
         Args: {
           p_account_id: string
@@ -1259,6 +1285,10 @@ export type Database = {
         Returns: string
       }
       delete_financial_transaction: { Args: { p_id: string }; Returns: string }
+      delete_personal_transaction: {
+        Args: { p_transaction_id: string }
+        Returns: string
+      }
       delete_household_account_income: {
         Args: { p_transaction_id: string }
         Returns: string
@@ -1266,6 +1296,18 @@ export type Database = {
       delete_shared_expense: { Args: { p_expense_id: string }; Returns: string }
       get_current_household: { Args: never; Returns: Json }
       get_dashboard_summary: { Args: { p_period: string }; Returns: Json }
+      get_archived_household: { Args: { p_household_id: string }; Returns: Json }
+      get_archived_households: { Args: never; Returns: Json }
+      get_household_activity_page: {
+        Args: {
+          p_household_id: string
+          p_limit?: number
+          p_before_date?: string | null
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+        }
+        Returns: Json
+      }
       get_household_accounts: {
         Args: { p_household_id: string }
         Returns: Json
@@ -1278,9 +1320,33 @@ export type Database = {
         Args: { p_household_id: string; p_limit?: number }
         Returns: Json
       }
+      get_household_expenses_page: {
+        Args: {
+          p_household_id: string
+          p_limit?: number
+          p_before_date?: string | null
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+        }
+        Returns: Json
+      }
       get_household_members: { Args: { p_household_id: string }; Returns: Json }
       get_household_transactions: {
         Args: { p_household_id: string; p_limit?: number }
+        Returns: Json
+      }
+      get_personal_account: { Args: { p_account_id: string }; Returns: Json }
+      get_personal_accounts: { Args: never; Returns: Json }
+      get_personal_transaction: { Args: { p_transaction_id: string }; Returns: Json }
+      get_personal_transactions: {
+        Args: {
+          p_account_id?: string | null
+          p_category_id?: string | null
+          p_start_date?: string | null
+          p_end_date?: string | null
+          p_limit?: number
+          p_offset?: number
+        }
         Returns: Json
       }
       import_csv_transactions_batch: {
@@ -1354,6 +1420,23 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      update_personal_transaction_exact: {
+        Args: {
+          p_transaction_id: string
+          p_account_id: string
+          p_kind: Database["public"]["Enums"]["transaction_kind"]
+          p_amount: string
+          p_date: string
+          p_description: string
+          p_category_id: string | null
+          p_notes: string | null
+          p_is_shared: boolean
+          p_split_ratio: Json | null
+          p_status: string
+          p_tag_ids: string[]
+        }
+        Returns: Json
       }
       update_household_account: {
         Args: { p_account_id: string; p_name: string; p_type: string }

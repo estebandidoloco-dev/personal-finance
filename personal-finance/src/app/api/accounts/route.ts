@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { accountCreateSchema, zodErrorResponse } from '@/lib/validation/financial';
+import { accountCreateSchema, personalAccountResponseSchema, zodErrorResponse } from '@/lib/validation/financial';
 
 export async function GET() {
   const supabase = await createClient();
@@ -9,14 +9,12 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data, error } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: true });
+  const { data, error } = await supabase.rpc('get_personal_accounts');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  const parsed = personalAccountResponseSchema.array().safeParse(data);
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid account response' }, { status: 500 });
+  return NextResponse.json(parsed.data);
 }
 
 export async function POST(req: NextRequest) {
@@ -40,19 +38,16 @@ export async function POST(req: NextRequest) {
 
   const input = parsed.data;
 
-  const { data, error } = await supabase
-    .from('accounts')
-    .insert({
-      user_id: user.id,
-      name: input.name,
-      type: input.type,
-      initial_balance: input.initial_balance,
-      is_shared: input.is_shared,
-      institution: input.institution,
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc('create_personal_account', {
+    p_name: input.name,
+    p_type: input.type,
+    p_initial_balance: input.initial_balance,
+    p_is_shared: input.is_shared,
+    p_institution: input.institution,
+  });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
+  const response = personalAccountResponseSchema.safeParse(data);
+  if (!response.success) return NextResponse.json({ error: 'Invalid account response' }, { status: 500 });
+  return NextResponse.json(response.data, { status: 201 });
 }

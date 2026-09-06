@@ -113,8 +113,8 @@ do $$ begin
   exception when check_violation then insert into test_results values ('ciclo indirecto rechazado', true); end;
 end $$;
 
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', 100, 'MXN', '2026-09-01',
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', '100.00', '2026-09-01',
   'Categoría eliminable', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaac1'
 );
 insert into public.goals(user_id, name, target_amount, category_id)
@@ -125,8 +125,8 @@ values (auth.uid(), 'Suscripción P12', 10, 'monthly', '2026-10-01', 'aaaaaaaa-a
 -- A budget reference must block deletion; the transaction/goal/subscription checks use a second category.
 insert into public.categories(id, user_id, name, type) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaac4', auth.uid(), 'Con referencias ledger', 'expense');
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', 25, 'MXN', '2026-09-02',
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'expense', '25.00', '2026-09-02',
   'Referencia', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaac4'
 );
 insert into public.budgets(user_id, category_id, month, amount)
@@ -156,10 +156,10 @@ select pg_temp.assert_true('hija nulifica parent', (
 
 insert into public.tags(id, user_id, name, color) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaad1', auth.uid(), 'P12 tag', '#abcdef');
-select public.update_financial_transaction(
-  p_id => (select id from public.transactions where description = 'Referencia'),
+select public.update_personal_transaction_exact(
+  p_transaction_id => (select id from public.transactions where description = 'Referencia'),
   p_account_id => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-  p_kind => 'expense', p_amount => 25, p_currency => 'MXN', p_date => '2026-09-02',
+  p_kind => 'expense', p_amount => '25.00', p_date => '2026-09-02',
   p_description => 'Referencia', p_category_id => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaac4',
   p_notes => null, p_is_shared => false, p_split_ratio => null, p_status => 'posted',
   p_tag_ids => array['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaad1']::uuid[]
@@ -178,10 +178,10 @@ select pg_temp.assert_true('borrar tag no borra transacción', (
 select pg_temp.assert_true('borrar tag elimina enlace', (
   select count(*) = 0 from public.transaction_tags where tag_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaad1'
 ));
-select public.update_financial_transaction(
-  p_id => (select id from public.transactions where description = 'Referencia'),
+select public.update_personal_transaction_exact(
+  p_transaction_id => (select id from public.transactions where description = 'Referencia'),
   p_account_id => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-  p_kind => 'expense', p_amount => 25, p_currency => 'MXN', p_date => '2026-09-02',
+  p_kind => 'expense', p_amount => '25.00', p_date => '2026-09-02',
   p_description => 'Referencia actualizada', p_category_id => null,
   p_notes => 'Nota actualizada', p_is_shared => false, p_split_ratio => null,
   p_status => 'posted', p_tag_ids => '{}'::uuid[]

@@ -56,7 +56,7 @@ const b = await makeUser('b');
 const createPayload = {
   name: `Cuenta MXN ${unique}`,
   type: 'checking',
-  initial_balance: 5000,
+  initial_balance: '5000.00',
   institution: 'Banco',
 };
 const createdResponse = await request('/api/accounts', {
@@ -65,6 +65,14 @@ const createdResponse = await request('/api/accounts', {
 assert.equal(createdResponse.status, 201);
 const account = await createdResponse.json();
 assert.equal(account.currency, 'MXN');
+assert.equal(account.initial_balance, '5000.00');
+assert.equal(account.balance, '5000.00');
+assert.equal(typeof account.balance, 'string');
+
+const numericMoney = await request('/api/accounts', {
+  method: 'POST', body: JSON.stringify({ ...createPayload, initial_balance: 5000 }),
+}, a.cookie);
+assert.equal(numericMoney.status, 400);
 
 for (const currency of ['MXN', 'USD']) {
   const response = await request('/api/accounts', {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { transactionMutationSchema, zodErrorResponse } from '@/lib/validation/financial';
+import { personalTransactionResponseSchema, transactionListQuerySchema, transactionMutationSchema, zodErrorResponse } from '@/lib/validation/financial';
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -9,37 +9,21 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const accountId = searchParams.get('account_id');
-  const categoryId = searchParams.get('category_id');
-  const startDate = searchParams.get('start_date');
-  const endDate = searchParams.get('end_date');
-  const limit = parseInt(searchParams.get('limit') || '50');
-  const offset = parseInt(searchParams.get('offset') || '0');
-
-  let query = supabase
-    .from('transactions')
-    .select(
-      `
-      *,
-      category:categories(id, name, icon, color, type),
-      tags:transaction_tags(tag:tags(id, name, color))
-    `
-    )
-    .eq('user_id', user.id)
-    .order('date', { ascending: false })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (accountId) query = query.eq('account_id', accountId);
-  if (categoryId) query = query.eq('category_id', categoryId);
-  if (startDate) query = query.gte('date', startDate);
-  if (endDate) query = query.lte('date', endDate);
-
-  const { data, error } = await query;
+  const query = transactionListQuerySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
+  if (!query.success) return NextResponse.json(zodErrorResponse(query.error), { status: 400 });
+  const { data, error } = await supabase.rpc('get_personal_transactions', {
+    p_account_id: query.data.account_id ?? null,
+    p_category_id: query.data.category_id ?? null,
+    p_start_date: query.data.start_date ?? null,
+    p_end_date: query.data.end_date ?? null,
+    p_limit: query.data.limit,
+    p_offset: query.data.offset,
+  });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  const response = personalTransactionResponseSchema.array().safeParse(data);
+  if (!response.success) return NextResponse.json({ error: 'Invalid transaction response' }, { status: 500 });
+  return NextResponse.json(response.data);
 }
 
 export async function POST(req: NextRequest) {
@@ -62,23 +46,22 @@ export async function POST(req: NextRequest) {
   }
 
   const input = parsed.data;
-  const { data: transaction, error } = await supabase.rpc('create_financial_transaction', {
+  const { data: transaction, error } = await supabase.rpc('create_personal_transaction_exact', {
     p_account_id: input.account_id,
     p_amount: input.amount,
     p_category_id: input.category_id,
-    p_currency: input.currency,
     p_date: input.date,
     p_description: input.description,
-    p_external_id: null,
     p_is_shared: input.is_shared,
     p_kind: input.kind,
     p_notes: input.notes,
-    p_source: 'manual',
     p_split_ratio: input.split_ratio,
     p_status: input.status,
     p_tag_ids: input.tag_ids,
   });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json(transaction, { status: 201 });
+  const response = personalTransactionResponseSchema.safeParse(transaction);
+  if (!response.success) return NextResponse.json({ error: 'Invalid transaction response' }, { status: 500 });
+  return NextResponse.json(response.data, { status: 201 });
 }

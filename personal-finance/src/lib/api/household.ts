@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { apiError, invalidRequest } from '@/lib/api/errors';
 import { createClient } from '@/lib/supabase/server';
+import { householdCursorPayloadSchema } from '@/lib/validation/household';
 
 export async function getHouseholdContext() {
   const supabase = await createClient();
@@ -29,4 +30,37 @@ export function mapHouseholdError(error: { code?: string; message?: string }) {
 
 export function unauthorizedHousehold() {
   return apiError('unauthorized', 'Debes iniciar sesión.', 401);
+}
+
+export function decodeHouseholdCursor(cursor?: string) {
+  if (!cursor) return { data: null } as const;
+  try {
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+    if (Buffer.from(decoded, 'utf8').toString('base64url') !== cursor) {
+      return { error: true } as const;
+    }
+    const parsed = householdCursorPayloadSchema.safeParse(JSON.parse(decoded));
+    return parsed.success ? { data: parsed.data } as const : { error: true } as const;
+  } catch {
+    return { error: true } as const;
+  }
+}
+
+export function buildHouseholdPage(data: unknown, limit: number) {
+  if (!Array.isArray(data)) return null;
+  const items = data.slice(0, limit);
+  if (data.length <= limit) return { items, next_cursor: null };
+  const last = items.at(-1);
+  if (typeof last !== 'object' || last === null) return null;
+  const cursor = householdCursorPayloadSchema.safeParse({
+    version: 1,
+    date: 'date' in last ? last.date : undefined,
+    created_at: 'created_at' in last ? last.created_at : undefined,
+    id: 'id' in last ? last.id : undefined,
+  });
+  if (!cursor.success) return null;
+  return {
+    items,
+    next_cursor: Buffer.from(JSON.stringify(cursor.data), 'utf8').toString('base64url'),
+  };
 }

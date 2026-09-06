@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import {
   accountUpdateSchema,
+  personalAccountResponseSchema,
   transactionIdSchema,
   zodErrorResponse,
 } from '@/lib/validation/financial';
@@ -22,15 +23,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!parsedId.success) {
     return NextResponse.json(zodErrorResponse(parsedId.error), { status: 400 });
   }
-  const { data, error } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('id', parsedId.data)
-    .eq('user_id', user.id)
-    .single();
+  const { data, error } = await supabase.rpc('get_personal_account', { p_account_id: parsedId.data });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json(data);
+  const response = personalAccountResponseSchema.safeParse(data);
+  if (!response.success) return NextResponse.json({ error: 'Invalid account response' }, { status: 500 });
+  return NextResponse.json(response.data);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -59,7 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .update(parsed.data)
     .eq('id', parsedId.data)
     .eq('user_id', user.id)
-    .select()
+    .select('id')
     .single();
 
   if (error?.code === 'PGRST116') {
@@ -67,7 +65,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if (error)
     return NextResponse.json({ error: 'No se pudo actualizar la cuenta.' }, { status: 500 });
-  return NextResponse.json(data);
+  const { data: account, error: readError } = await supabase.rpc('get_personal_account', {
+    p_account_id: data.id,
+  });
+  if (readError) return NextResponse.json({ error: 'No se pudo leer la cuenta.' }, { status: 500 });
+  const response = personalAccountResponseSchema.safeParse(account);
+  if (!response.success) return NextResponse.json({ error: 'Invalid account response' }, { status: 500 });
+  return NextResponse.json(response.data);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

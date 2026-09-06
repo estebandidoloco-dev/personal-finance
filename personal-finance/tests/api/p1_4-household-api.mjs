@@ -7,6 +7,7 @@ const { env, supabaseUrl, baseUrl } = await loadLocalHouseholdTestEnv();
 
 const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const fixtures = [];
+const householdIds = [];
 let householdId;
 
 async function makeUser(label) {
@@ -30,6 +31,32 @@ async function request(path, options = {}, cookie = '') {
   });
 }
 
+async function readAllPages(path, cookie) {
+  const items = [];
+  let cursor;
+  do {
+    const separator = path.includes('?') ? '&' : '?';
+    const response = await request(`${path}${cursor ? `${separator}cursor=${encodeURIComponent(cursor)}` : ''}`, {}, cookie);
+    assert.equal(response.status, 200);
+    const page = await response.json();
+    assert.ok(Array.isArray(page.items));
+    items.push(...page.items);
+    cursor = page.next_cursor;
+  } while (cursor !== null);
+  assert.equal(new Set(items.map((item) => item.id)).size, items.length);
+  for (let index = 1; index < items.length; index += 1) {
+    const previous = items[index - 1];
+    const current = items[index];
+    assert.ok(
+      previous.date > current.date
+      || (previous.date === current.date && previous.created_at > current.created_at)
+      || (previous.date === current.date && previous.created_at === current.created_at && previous.id > current.id),
+      'Household page order must be date DESC, created_at DESC, id DESC.'
+    );
+  }
+  return items;
+}
+
 let a;
 let b;
 let outsider;
@@ -46,6 +73,7 @@ try {
   }, a.cookie);
   assert.equal(create.status, 201);
   householdId = (await create.json()).id;
+  householdIds.push(householdId);
   assert.match(householdId, /^[0-9a-f-]{36}$/u);
 
   const forbiddenHouseholdField = await request('/api/household', {
@@ -92,10 +120,13 @@ try {
     assert.equal(response.status, 400);
   }
 
-  const { data: personalAccount, error: personalAccountError } = await a.client.from('accounts').insert({
-    user_id: a.user.id, name: `Personal ${unique}`, type: 'checking', initial_balance: 500,
-  }).select('id').single();
-  assert.ifError(personalAccountError);
+  const personalAccountResponse = await request('/api/accounts', {
+    method: 'POST', body: JSON.stringify({
+      name: `Personal ${unique}`, type: 'checking', initial_balance: '500.00',
+    }),
+  }, a.cookie);
+  assert.equal(personalAccountResponse.status, 201);
+  const personalAccount = await personalAccountResponse.json();
 
   const forgedPayer = await request('/api/household/expenses', {
     method: 'POST', body: JSON.stringify({
@@ -146,10 +177,10 @@ try {
   const expenseList = await request(`/api/household/expenses?household_id=${householdId}&limit=1`, {}, b.cookie);
   assert.equal(expenseList.status, 200);
   const listed = await expenseList.json();
-  assert.equal(listed.length, 1);
-  assert.equal(listed[0].account_id, null);
-  assert.equal(listed[0].notes, null);
-  assert.equal(listed[0].amount, '100.00');
+  assert.equal(listed.items.length, 1);
+  assert.equal(listed.items[0].account_id, null);
+  assert.equal(listed.items[0].notes, null);
+  assert.equal(listed.items[0].amount, '100.00');
 
   const cancelled = await request(`/api/household/expenses/${expense.id}`, {
     method: 'PATCH', body: JSON.stringify({
@@ -162,10 +193,13 @@ try {
   assert.equal(zeroBalance.status, 200);
   assert.equal((await zeroBalance.json()).amount, '0.00');
 
-  const { data: overflowPersonalAccount, error: overflowAccountError } = await a.client.from('accounts').insert({
-    user_id: a.user.id, name: `Overflow ${unique}`, type: 'checking', initial_balance: 0,
-  }).select('id').single();
-  assert.ifError(overflowAccountError);
+  const overflowPersonalAccountResponse = await request('/api/accounts', {
+    method: 'POST', body: JSON.stringify({
+      name: `Overflow ${unique}`, type: 'checking', initial_balance: '0.00',
+    }),
+  }, a.cookie);
+  assert.equal(overflowPersonalAccountResponse.status, 201);
+  const overflowPersonalAccount = await overflowPersonalAccountResponse.json();
 
   const overflowDatabase = await connectPostgres();
   try {
@@ -176,9 +210,9 @@ try {
       declare iteration integer;
       begin
         for iteration in 1..1001 loop
-          perform public.create_financial_transaction(
+          perform public.create_personal_transaction_exact(
             p_account_id := '${overflowPersonalAccount.id}',
-            p_kind := 'income', p_amount := 999999999999.99, p_currency := 'MXN',
+            p_kind := 'income', p_amount := '999999999999.99',
             p_date := '2026-09-06', p_description := 'HTTP overflow funding'
           );
           perform public.create_shared_expense(
@@ -193,6 +227,13 @@ try {
         end loop;
       end
       $large_balance$;
+      reset role;
+      update public.household_expenses
+         set created_at = '2026-09-05 12:00:00+00'
+       where household_id = '${householdId}';
+      update public.household_account_transactions
+         set created_at = '2026-09-05 12:00:00+00'
+       where household_id = '${householdId}';
     `, 180_000);
   } finally {
     overflowDatabase.close();
@@ -210,6 +251,17 @@ try {
     /[#eE,\s]/u
   );
 
+  const activeArchive = await request('/api/household/archive', {}, a.cookie);
+  assert.equal(activeArchive.status, 200);
+  assert.equal((await activeArchive.json()).households.length, 0);
+
+  const invalidCursor = await request(
+    `/api/household/expenses?household_id=${householdId}&cursor=not-a-valid-cursor`, {}, a.cookie
+  );
+  assert.equal(invalidCursor.status, 400);
+  const outsiderHistory = await request(`/api/household/history?household_id=${householdId}`, {}, outsider.cookie);
+  assert.equal(outsiderHistory.status, 404);
+
   const leave = await request('/api/household/leave', {
     method: 'POST', body: JSON.stringify({ household_id: householdId }),
   }, b.cookie);
@@ -224,6 +276,58 @@ try {
   }, a.cookie);
   assert.equal(closedWrite.status, 404);
 
+  const archivedList = await request('/api/household/archive', {}, a.cookie);
+  assert.equal(archivedList.status, 200);
+  const archivedHouseholds = (await archivedList.json()).households;
+  assert.equal(archivedHouseholds.length, 1);
+  assert.equal(archivedHouseholds[0].id, householdId);
+  assert.equal(archivedHouseholds[0].status, 'closed');
+  assert.equal(archivedHouseholds[0].currency, 'MXN');
+  const archivedDetail = await request(`/api/household/archive/${householdId}`, {}, a.cookie);
+  assert.equal(archivedDetail.status, 200);
+  assert.equal((await archivedDetail.json()).id, householdId);
+  assert.equal((await request(`/api/household/archive/${householdId}`, {}, outsider.cookie)).status, 404);
+  assert.equal((await request('/api/household/archive', {}, outsider.cookie)).status, 200);
+  assert.equal((await (await request('/api/household/archive', {}, outsider.cookie)).json()).households.length, 0);
+
+  const archivedExpenses = await readAllPages(
+    `/api/household/expenses?household_id=${householdId}&limit=100`, a.cookie
+  );
+  assert.equal(archivedExpenses.length, 1002);
+  const archivedHistory = await readAllPages(
+    `/api/household/history?household_id=${householdId}&limit=100`, a.cookie
+  );
+  assert.equal(archivedHistory.length, 1003);
+  assert.equal(archivedHistory.filter((item) => item.entry_type === 'household_transaction').length, 1);
+
+  const currentResponse = await request('/api/household', {
+    method: 'POST', body: JSON.stringify({ name: `Casa actual ${unique}` }),
+  }, a.cookie);
+  assert.equal(currentResponse.status, 201);
+  const currentHouseholdId = (await currentResponse.json()).id;
+  householdIds.push(currentHouseholdId);
+  const archiveWithCurrent = await request('/api/household/archive', {}, a.cookie);
+  const archiveWithCurrentItems = (await archiveWithCurrent.json()).households;
+  assert.equal(archiveWithCurrentItems.length, 1);
+  assert.equal(archiveWithCurrentItems[0].id, householdId);
+  assert.ok(!archiveWithCurrentItems.some((item) => item.id === currentHouseholdId));
+
+  const removalDatabase = await connectPostgres();
+  try {
+    await removalDatabase.query(`
+      update public.household_members
+         set status = 'removed', ended_at = coalesce(ended_at, now())
+       where household_id = '${householdId}' and user_id = '${b.user.id}'
+    `);
+  } finally {
+    removalDatabase.close();
+  }
+  const removedArchive = await request('/api/household/archive', {}, b.cookie);
+  assert.equal(removedArchive.status, 200);
+  assert.equal((await removedArchive.json()).households.length, 0);
+  assert.equal((await request(`/api/household/archive/${householdId}`, {}, b.cookie)).status, 404);
+  assert.equal((await request(`/api/household/history?household_id=${householdId}`, {}, b.cookie)).status, 404);
+
   console.log('P1.4 API PASS: auth, lifecycle, strict contracts, exact money, isolation, debt and archive.');
 } finally {
   const admin = await connectPostgres();
@@ -231,20 +335,21 @@ try {
     const userIds = fixtures.map((fixture) => fixture.user.id);
     const userIdArray = userIds.length === 0 ? 'array[]::uuid[]' :
       `array[${userIds.map((id) => `'${id}'::uuid`).join(',')}]`;
-    const householdSql = householdId ? `'${householdId}'::uuid` : 'null::uuid';
+    const householdArray = householdIds.length === 0 ? 'array[]::uuid[]' :
+      `array[${householdIds.map((id) => `'${id}'::uuid`).join(',')}]`;
     await admin.query(`
       begin;
       set local session_replication_role = replica;
       set constraints all deferred;
       delete from public.household_expense_splits where household_expense_id in (
-        select id from public.household_expenses where household_id = ${householdSql}
+        select id from public.household_expenses where household_id = any(${householdArray})
       );
-      delete from public.household_expenses where household_id = ${householdSql};
-      delete from public.household_account_transactions where household_id = ${householdSql};
-      delete from public.household_accounts where household_id = ${householdSql};
-      delete from public.household_invitations where household_id = ${householdSql};
-      delete from public.household_members where household_id = ${householdSql};
-      delete from public.households where id = ${householdSql};
+      delete from public.household_expenses where household_id = any(${householdArray});
+      delete from public.household_account_transactions where household_id = any(${householdArray});
+      delete from public.household_accounts where household_id = any(${householdArray});
+      delete from public.household_invitations where household_id = any(${householdArray});
+      delete from public.household_members where household_id = any(${householdArray});
+      delete from public.households where id = any(${householdArray});
       delete from public.transaction_tags where transaction_id in (
         select id from public.transactions where user_id = any(${userIdArray})
       );

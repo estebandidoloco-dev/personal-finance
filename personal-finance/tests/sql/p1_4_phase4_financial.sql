@@ -19,6 +19,7 @@ insert into auth.users(id, aud, role, email, raw_user_meta_data, created_at, upd
   ('44000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated', 'money-x@example.test', '{"display_name":"Money X"}', now(), now());
 insert into public.accounts(id, user_id, name, type, initial_balance) values
   ('44100000-0000-4000-8000-000000000001', '44000000-0000-4000-8000-000000000001', 'Personal A', 'checking', 1000),
+  ('44100000-0000-4000-8000-000000000003', '44000000-0000-4000-8000-000000000001', 'Personal A second', 'checking', 500),
   ('44100000-0000-4000-8000-000000000002', '44000000-0000-4000-8000-000000000002', 'Personal B', 'checking', 1000);
 insert into public.households(id, name, status, created_by_user_id, activated_at)
 values ('44200000-0000-4000-8000-000000000001', 'Casa Money', 'active', '44000000-0000-4000-8000-000000000001', now());
@@ -105,6 +106,59 @@ select pg_temp.assert_true('personal-funded deriva payer actor y saldo personal'
          and payload->>'recorded_by_user_id' = '44000000-0000-4000-8000-000000000001'
        from payloads where label = 'personal_expense'));
 
+create function pg_temp.assert_linked_personal_update_rejected(
+  p_name text, p_account_id uuid, p_kind public.transaction_kind,
+  p_amount text, p_status text
+)
+returns void language plpgsql as $$
+begin
+  begin
+    perform public.update_personal_transaction_exact(
+      (select (payload->>'personal_transaction_id')::uuid from payloads where label = 'personal_expense'),
+      p_account_id, p_kind, p_amount, '2026-09-06', 'Bypass personal', null,
+      null, true, null, p_status, '{}'::uuid[]
+    );
+    raise exception 'linked personal update accepted: %', p_name;
+  exception when check_violation then
+    insert into test_results values (p_name, true);
+  end;
+end
+$$;
+select pg_temp.assert_linked_personal_update_rejected(
+  'linked exact amount rechazado', '44100000-0000-4000-8000-000000000001', 'expense', '110.00', 'posted'
+);
+select pg_temp.assert_linked_personal_update_rejected(
+  'linked exact status rechazado', '44100000-0000-4000-8000-000000000001', 'expense', '100.00', 'cancelled'
+);
+select pg_temp.assert_linked_personal_update_rejected(
+  'linked exact account rechazado', '44100000-0000-4000-8000-000000000003', 'expense', '100.00', 'posted'
+);
+select pg_temp.assert_linked_personal_update_rejected(
+  'linked exact kind rechazado', '44100000-0000-4000-8000-000000000001', 'income', '100.00', 'posted'
+);
+do $$ begin
+  begin
+    perform public.delete_personal_transaction(
+      (select (payload->>'personal_transaction_id')::uuid from payloads where label = 'personal_expense')
+    );
+    raise exception 'linked personal delete accepted';
+  exception when check_violation then
+    insert into test_results values ('linked exact delete rechazado', true);
+  end;
+end $$;
+select pg_temp.assert_true('ataques personales dejan source splits saldo y deuda intactos',
+  (select amount = 100 and status = 'posted' and kind = 'expense'
+     from public.transactions
+    where id = (select (payload->>'personal_transaction_id')::uuid from payloads where label = 'personal_expense'))
+  and (select balance = 900 from public.accounts where id = '44100000-0000-4000-8000-000000000001')
+  and (select count(*) = 2 and sum(amount) = 100
+         from public.household_expense_splits
+        where household_expense_id = (select (payload->>'id')::uuid from payloads where label = 'personal_expense'))
+  and (select sum((position->>'amount')::numeric) = 0
+         from jsonb_array_elements(
+           public.get_household_balance_between_members('44200000-0000-4000-8000-000000000001')->'positions'
+         ) position));
+
 select set_config('request.jwt.claim.sub', '44000000-0000-4000-8000-000000000002', true);
 do $$ begin
   begin
@@ -131,7 +185,7 @@ select pg_temp.assert_true('update compartido mantiene saldo y split exactos',
 
 do $$ begin
   begin
-    perform public.delete_financial_transaction(
+    perform public.delete_personal_transaction(
       (select (payload->>'personal_transaction_id')::uuid from payloads where label = 'personal_expense')
     );
     raise exception 'linked personal transaction deleted directly';

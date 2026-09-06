@@ -10,10 +10,12 @@ export const exactSignedMoneySchema = z
   .string()
   .regex(/^-?(0|[1-9]\d{0,11})\.\d{2}$/)
   .refine((value) => value !== '-0.00', '-0.00 no es canónico');
-const exactAggregateUnsignedMoneySchema = z.string().regex(/^(0|[1-9]\d*)\.\d{2}$/);
+const aggregateUnsignedMoneyPattern = /^(0|[1-9]\d*)\.\d{2}$/;
+const aggregateSignedMoneyPattern = /^-?(0|[1-9]\d*)\.\d{2}$/;
+const exactAggregateUnsignedMoneySchema = z.string().regex(aggregateUnsignedMoneyPattern);
 export const exactAggregateSignedMoneySchema = z
   .string()
-  .regex(/^-?(0|[1-9]\d*)\.\d{2}$/)
+  .regex(aggregateSignedMoneyPattern)
   .refine((value) => value !== '-0.00', '-0.00 no es canónico');
 
 function exactMoneyToCents(value: string) {
@@ -35,6 +37,9 @@ export const householdBalanceResponseSchema = z.object({
   owed_to_user_id: z.string().uuid().nullable(),
   amount: exactAggregateUnsignedMoneySchema,
 }).strict().superRefine((value, context) => {
+  if (!aggregateUnsignedMoneyPattern.test(value.amount)
+      || value.positions.some((position) => !aggregateSignedMoneyPattern.test(position.amount)
+        || position.amount === '-0.00')) return;
   const positions = value.positions.map((position) => exactMoneyToCents(position.amount));
   if (positions[0] + positions[1] !== BigInt('0')) {
     context.addIssue({ code: 'custom', message: 'Las posiciones deben sumar exactamente 0.00', path: ['positions'] });
@@ -60,6 +65,18 @@ function isCalendarDate(value: string) {
 }
 
 export const financialDateSchema = z.string().refine(isCalendarDate, 'La fecha debe ser un DATE válido YYYY-MM-DD');
+export const householdCursorPayloadSchema = z.object({
+  version: z.literal(1),
+  date: financialDateSchema,
+  created_at: z.string().datetime({ offset: true }),
+  id: householdIdSchema,
+}).strict();
+export const householdPageQuerySchema = z.object({
+  household_id: householdIdSchema,
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  cursor: z.string().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).optional(),
+}).strict();
+
 const accountTypeSchema = z.enum(['checking', 'savings', 'credit', 'cash', 'investment', 'other']);
 const statusSchema = z.enum(['pending', 'posted', 'cancelled', 'duplicate']);
 const splitSchema = z.object({

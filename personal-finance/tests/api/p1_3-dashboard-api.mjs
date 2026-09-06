@@ -66,6 +66,13 @@ async function getDashboard(cookie, period) {
   return fetch(url, { headers: { cookie } });
 }
 
+async function request(path, options = {}, cookie = '') {
+  return fetch(new URL(path, baseUrl), {
+    ...options,
+    headers: { 'content-type': 'application/json', cookie, ...(options.headers ?? {}) },
+  });
+}
+
 function assertMoneyStrings(value) {
   if (Array.isArray(value)) {
     value.forEach(assertMoneyStrings);
@@ -117,31 +124,22 @@ assert.equal((await invalid.json()).code, 'invalid_period');
 
 const a = await makeUser('a');
 const b = await makeUser('b');
-const { data: accountA, error: accountError } = await a.client
-  .from('accounts')
-  .insert({ user_id: a.user.id, name: `MXN ${unique}`, type: 'checking', initial_balance: 1000 })
-  .select('id,currency')
-  .single();
-assert.ifError(accountError);
+const accountResponse = await request('/api/accounts', {
+  method: 'POST', body: JSON.stringify({ name: `MXN ${unique}`, type: 'checking', initial_balance: '1000.00' }),
+}, a.cookie);
+assert.equal(accountResponse.status, 201);
+const accountA = await accountResponse.json();
 assert.equal(accountA.currency, 'MXN');
 const today = localToday();
 for (const input of [
-  { kind: 'income', amount: 100, description: 'API income', status: 'posted' },
-  { kind: 'expense', amount: 100.01, description: 'API expense', status: 'posted' },
-  { kind: 'income', amount: 999, description: 'API pending', status: 'pending' },
+  { kind: 'income', amount: '100.00', description: 'API income', status: 'posted' },
+  { kind: 'expense', amount: '100.01', description: 'API expense', status: 'posted' },
+  { kind: 'income', amount: '999.00', description: 'API pending', status: 'pending' },
 ]) {
-  const { error } = await a.client.rpc('create_financial_transaction', {
-    p_account_id: accountA.id,
-    p_kind: input.kind,
-    p_amount: input.amount,
-    p_currency: 'MXN',
-    p_date: today,
-    p_description: input.description,
-    p_status: input.status,
-    p_tag_ids: [],
-    p_source: 'manual',
-  });
-  assert.ifError(error);
+  const response = await request('/api/transactions', {
+    method: 'POST', body: JSON.stringify({ account_id: accountA.id, date: today, ...input }),
+  }, a.cookie);
+  assert.equal(response.status, 201);
 }
 
 const snapshots = [];
@@ -187,14 +185,15 @@ assert.deepEqual(bDashboard.recent_transactions, []);
 
 async function assertLargeTotal(label, balances, expected) {
   const fixture = await makeUser(label);
-  const rows = balances.map((initial_balance, index) => ({
-    user_id: fixture.user.id,
-    name: `${label}-${index}-${unique}`,
-    type: 'checking',
-    initial_balance,
-  }));
-  const { error } = await fixture.client.from('accounts').insert(rows);
-  assert.ifError(error);
+  const database = await connectPostgres();
+  try {
+    const values = balances.map((initialBalance, index) =>
+      `('${fixture.user.id}', '${label}-${index}-${unique}', 'checking', '${initialBalance}')`
+    ).join(',');
+    await database.query(`insert into public.accounts(user_id, name, type, initial_balance) values ${values}`);
+  } finally {
+    database.close();
+  }
   const response = await getDashboard(fixture.cookie, 'this_month');
   assert.equal(response.status, 200);
   const body = await response.json();
@@ -218,7 +217,7 @@ for (const fixture of createdUsers) {
     .eq('user_id', fixture.user.id);
   assert.ifError(transactionReadError);
   for (const transaction of transactions) {
-    const { error } = await fixture.client.rpc('delete_financial_transaction', { p_id: transaction.id });
+    const { error } = await fixture.client.rpc('delete_personal_transaction', { p_transaction_id: transaction.id });
     assert.ifError(error);
   }
   const { error: accountDeleteError } = await fixture.client

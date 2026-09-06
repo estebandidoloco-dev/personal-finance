@@ -108,9 +108,9 @@ try {
     ) as expense
   `))[0], 'expense');
   const linkedResults = await Promise.allSettled([
-    userA.query(`select public.update_financial_transaction(
-      '${linkedExpense.personal_transaction_id}', '${ids.personalAccount}', 'expense', 45.00,
-      'MXN', '2026-09-05', 'Forbidden isolated update', null, null, true, null, 'posted', array[]::uuid[]
+    userA.query(`select public.update_personal_transaction_exact(
+      '${linkedExpense.personal_transaction_id}', '${ids.personalAccount}', 'expense', '45.00',
+      '2026-09-05', 'Forbidden isolated update', null, null, true, null, 'posted', array[]::uuid[]
     )`, 10_000),
     userASecond.query(`select public.update_shared_expense(
       '${linkedExpense.id}', '${ids.personalAccount}', '50.00', '2026-09-05',

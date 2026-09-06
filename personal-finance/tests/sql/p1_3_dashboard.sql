@@ -30,32 +30,32 @@ insert into public.categories(id, user_id, name, type, color) values
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'income', 500, 'MXN',
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'income', '500.00',
   (now() at time zone 'America/Mexico_City')::date, 'Ingreso posted', null
 );
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'expense', 500.01, 'MXN',
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'expense', '500.01',
   (now() at time zone 'America/Mexico_City')::date, 'Neto menos un centavo',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac1'
 );
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'expense', 1, 'MXN',
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'expense', '1.00',
   (now() at time zone 'America/Mexico_City')::date - 1, 'Categoría global',
   'cccccccc-cccc-4ccc-8ccc-ccccccccccc1'
 );
-select public.create_financial_transaction(
-  p_account_id => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', p_kind => 'income', p_amount => 999,
-  p_currency => 'MXN', p_date => (now() at time zone 'America/Mexico_City')::date,
+select public.create_personal_transaction_exact(
+  p_account_id => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', p_kind => 'income', p_amount => '999.00',
+  p_date => (now() at time zone 'America/Mexico_City')::date,
   p_description => 'Pending excluida', p_status => 'pending'
 );
-select public.create_financial_transaction(
-  p_account_id => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', p_kind => 'expense', p_amount => 999,
-  p_currency => 'MXN', p_date => (now() at time zone 'America/Mexico_City')::date,
+select public.create_personal_transaction_exact(
+  p_account_id => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', p_kind => 'expense', p_amount => '999.00',
+  p_date => (now() at time zone 'America/Mexico_City')::date,
   p_description => 'Cancelled excluida', p_status => 'cancelled'
 );
-select public.create_financial_transaction(
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'income', 2, 'MXN',
+select public.create_personal_transaction_exact(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'income', '2.00',
   (date_trunc('month', now() at time zone 'America/Mexico_City')::date - 1),
   'Reciente fuera del mes', null
 );

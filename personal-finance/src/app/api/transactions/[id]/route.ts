@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   transactionIdSchema,
   transactionMutationSchema,
+  personalTransactionResponseSchema,
   zodErrorResponse,
 } from '@/lib/validation/financial';
 
@@ -23,21 +24,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json(zodErrorResponse(parsedId.error), { status: 400 });
   }
   const id = parsedId.data;
-  const { data, error } = await supabase
-    .from('transactions')
-    .select(
-      `
-      *,
-      category:categories(id, name, icon, color, type),
-      tags:transaction_tags(tag:tags(id, name, color))
-    `
-    )
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single();
+  const { data, error } = await supabase.rpc('get_personal_transaction', { p_transaction_id: id });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json(data);
+  const response = personalTransactionResponseSchema.safeParse(data);
+  if (!response.success) return NextResponse.json({ error: 'Invalid transaction response' }, { status: 500 });
+  return NextResponse.json(response.data);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -62,14 +54,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const input = parsed.data;
-  const { data: transaction, error } = await supabase.rpc('update_financial_transaction', {
+  const { data: transaction, error } = await supabase.rpc('update_personal_transaction_exact', {
     p_account_id: input.account_id,
     p_amount: input.amount,
     p_category_id: input.category_id,
-    p_currency: input.currency,
     p_date: input.date,
     p_description: input.description,
-    p_id: parsedId.data,
+    p_transaction_id: parsedId.data,
     p_is_shared: input.is_shared,
     p_kind: input.kind,
     p_notes: input.notes,
@@ -79,7 +70,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json(transaction);
+  const response = personalTransactionResponseSchema.safeParse(transaction);
+  if (!response.success) return NextResponse.json({ error: 'Invalid transaction response' }, { status: 500 });
+  return NextResponse.json(response.data);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -91,8 +84,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json(zodErrorResponse(parsedId.error), { status: 400 });
   }
 
-  const { error } = await supabase.rpc('delete_financial_transaction', {
-    p_id: parsedId.data,
+  const { error } = await supabase.rpc('delete_personal_transaction', {
+    p_transaction_id: parsedId.data,
   });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
