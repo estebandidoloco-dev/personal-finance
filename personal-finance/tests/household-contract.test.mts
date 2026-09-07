@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 // Node's native type-stripping loader requires the extension; the app uses bundler resolution.
 // @ts-expect-error -- TypeScript disallows .ts extensions unless enabled globally.
-import { exactAggregateSignedMoneySchema, exactPositiveMoneySchema, exactSignedMoneySchema, financialDateSchema, householdAccountCreateSchema, householdBalanceResponseSchema, householdContributionCreateSchema, householdContributionResponseSchema, householdInvitationCreateSchema, sharedExpenseCreateSchema } from '../src/lib/validation/household.ts';
+import { exactAggregateSignedMoneySchema, exactPositiveMoneySchema, exactSignedMoneySchema, financialDateSchema, householdAccountCreateSchema, householdBalanceResponseSchema, householdContributionCreateSchema, householdContributionResponseSchema, householdInvitationCreateSchema, householdSettlementCreateSchema, householdSettlementResponseSchema, sharedExpenseCreateSchema } from '../src/lib/validation/household.ts';
 
 const userA = '64000000-0000-4000-8000-000000000001';
 const userB = '64000000-0000-4000-8000-000000000002';
@@ -228,6 +228,45 @@ test('contribution contracts keep exact money and private linkage out of the res
   }
   assert.equal(householdContributionResponseSchema.safeParse({ ...response, recorded_by_user_id: userB }).success, false);
   assert.equal(householdContributionResponseSchema.safeParse({ ...response, status: 'cancelled' }).success, false);
+});
+
+test('settlement contracts keep exact money and omit identities and idempotency key from request', () => {
+  const input = {
+    household_id: baseExpense.household_id,
+    amount: '150.50',
+    date: baseExpense.date,
+    note: 'Pago de cena',
+    idempotency_key: '64300000-0000-4000-8000-000000000002',
+  };
+  assert.equal(householdSettlementCreateSchema.safeParse(input).success, true);
+  for (const amount of [150.5, '0.00', '-0.00', '01.00', '1e3']) {
+    assert.equal(householdSettlementCreateSchema.safeParse({ ...input, amount }).success, false, String(amount));
+  }
+  for (const forbidden of ['from_user_id', 'to_user_id', 'recorded_by_user_id', 'currency', 'status']) {
+    assert.equal(householdSettlementCreateSchema.safeParse({ ...input, [forbidden]: userA }).success, false, forbidden);
+  }
+
+  const response = {
+    id: '64400000-0000-4000-8000-000000000002',
+    household_id: input.household_id,
+    from_user_id: userB,
+    to_user_id: userA,
+    recorded_by_user_id: userB,
+    amount: input.amount,
+    currency: 'MXN' as const,
+    date: input.date,
+    note: input.note,
+    status: 'posted' as const,
+    created_at: '2026-09-06T13:00:00.000Z',
+    cancelled_at: null,
+  };
+  assert.equal(householdSettlementResponseSchema.safeParse(response).success, true);
+  for (const privateField of ['idempotency_key', 'cancelled_by_user_id']) {
+    assert.equal(householdSettlementResponseSchema.safeParse({ ...response, [privateField]: input.idempotency_key }).success, false, privateField);
+  }
+  assert.equal(householdSettlementResponseSchema.safeParse({ ...response, to_user_id: userB }).success, false);
+  assert.equal(householdSettlementResponseSchema.safeParse({ ...response, recorded_by_user_id: userA }).success, false);
+  assert.equal(householdSettlementResponseSchema.safeParse({ ...response, status: 'cancelled' }).success, false);
 });
 
 test('shared expense contract rejects forged identities and invalid split shapes', () => {

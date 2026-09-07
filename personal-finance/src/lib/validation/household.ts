@@ -186,6 +186,39 @@ export const householdContributionResponseSchema = z.object({
   }
 });
 
+export const householdSettlementCreateSchema = z.object({
+  household_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  date: financialDateSchema,
+  note: z.string().trim().max(2000).nullable().default(null),
+  idempotency_key: householdIdSchema,
+}).strict();
+
+export const householdSettlementResponseSchema = z.object({
+  id: householdIdSchema,
+  household_id: householdIdSchema,
+  from_user_id: householdIdSchema,
+  to_user_id: householdIdSchema,
+  recorded_by_user_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  currency: z.literal('MXN'),
+  date: financialDateSchema,
+  note: z.string().nullable(),
+  status: z.enum(['posted', 'cancelled']),
+  created_at: z.string().datetime({ offset: true }),
+  cancelled_at: z.string().datetime({ offset: true }).nullable(),
+}).strict().superRefine((value, context) => {
+  if (value.from_user_id === value.to_user_id) {
+    context.addIssue({ code: 'custom', message: 'El deudor y acreedor no pueden ser el mismo usuario', path: ['to_user_id'] });
+  }
+  if (value.from_user_id !== value.recorded_by_user_id) {
+    context.addIssue({ code: 'custom', message: 'El deudor debe coincidir con el recorder', path: ['recorded_by_user_id'] });
+  }
+  if ((value.status === 'posted') !== (value.cancelled_at === null)) {
+    context.addIssue({ code: 'custom', message: 'El estado no coincide con la cancelación', path: ['status'] });
+  }
+});
+
 export const householdIncomeCreateSchema = z.object({
   account_id: householdIdSchema,
   amount: exactPositiveMoneySchema,
