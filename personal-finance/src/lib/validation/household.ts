@@ -154,6 +154,38 @@ export const householdAccountUpdateSchema = z.object({
   type: accountTypeSchema,
 }).strict();
 
+export const householdContributionCreateSchema = z.object({
+  household_id: householdIdSchema,
+  source_personal_account_id: householdIdSchema,
+  destination_household_account_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  date: financialDateSchema,
+  note: z.string().trim().max(2000).nullable().default(null),
+  idempotency_key: householdIdSchema,
+}).strict();
+
+export const householdContributionResponseSchema = z.object({
+  id: householdIdSchema,
+  household_id: householdIdSchema,
+  contributed_by_user_id: householdIdSchema,
+  recorded_by_user_id: householdIdSchema,
+  destination_household_account_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  currency: z.literal('MXN'),
+  date: financialDateSchema,
+  note: z.string().nullable(),
+  status: z.enum(['posted', 'cancelled']),
+  created_at: z.string().datetime({ offset: true }),
+  cancelled_at: z.string().datetime({ offset: true }).nullable(),
+}).strict().superRefine((value, context) => {
+  if (value.contributed_by_user_id !== value.recorded_by_user_id) {
+    context.addIssue({ code: 'custom', message: 'El contributor debe coincidir con el recorder', path: ['recorded_by_user_id'] });
+  }
+  if ((value.status === 'posted') !== (value.cancelled_at === null)) {
+    context.addIssue({ code: 'custom', message: 'El estado no coincide con la cancelación', path: ['status'] });
+  }
+});
+
 export const householdIncomeCreateSchema = z.object({
   account_id: householdIdSchema,
   amount: exactPositiveMoneySchema,

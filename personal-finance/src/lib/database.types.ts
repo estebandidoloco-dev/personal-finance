@@ -511,6 +511,67 @@ export type Database = {
           },
         ]
       }
+      household_contributions: {
+        Row: {
+          cancelled_at: string | null
+          cancelled_by_user_id: string | null
+          contributed_by_user_id: string
+          created_at: string
+          household_account_transaction_id: string
+          household_id: string
+          id: string
+          idempotency_key: string
+          personal_transaction_id: string
+          recorded_by_user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          cancelled_by_user_id?: string | null
+          contributed_by_user_id: string
+          created_at?: string
+          household_account_transaction_id: string
+          household_id: string
+          id?: string
+          idempotency_key: string
+          personal_transaction_id: string
+          recorded_by_user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          cancelled_by_user_id?: string | null
+          contributed_by_user_id?: string
+          created_at?: string
+          household_account_transaction_id?: string
+          household_id?: string
+          id?: string
+          idempotency_key?: string
+          personal_transaction_id?: string
+          recorded_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "household_contributions_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "household_contributions_personal_transaction_fkey"
+            columns: ["personal_transaction_id", "contributed_by_user_id"]
+            isOneToOne: true
+            referencedRelation: "transactions"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "household_contributions_household_transaction_fkey"
+            columns: ["household_account_transaction_id", "household_id"]
+            isOneToOne: true
+            referencedRelation: "household_account_transactions"
+            referencedColumns: ["id", "household_id"]
+          },
+        ]
+      }
       household_expense_splits: {
         Row: {
           amount: number
@@ -1158,6 +1219,10 @@ export type Database = {
         Returns: string
       }
       close_household_account: { Args: { p_account_id: string }; Returns: Json }
+      cancel_household_contribution: {
+        Args: { p_contribution_id: string }
+        Returns: Json
+      }
       create_personal_account: {
         Args: {
           p_name: string
@@ -1305,6 +1370,18 @@ export type Database = {
           p_before_date?: string | null
           p_before_created_at?: string | null
           p_before_id?: string | null
+        }
+        Returns: Json
+      }
+      create_household_contribution: {
+        Args: {
+          p_amount: string
+          p_date: string
+          p_destination_household_account_id: string
+          p_household_id: string
+          p_idempotency_key: string
+          p_note: string | null
+          p_source_personal_account_id: string
         }
         Returns: Json
       }

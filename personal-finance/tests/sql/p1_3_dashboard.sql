@@ -198,8 +198,9 @@ select pg_temp.assert_true('agregado sobre safe cents exacto como string', (
   from (select public.get_dashboard_summary('this_month') payload) result
 ));
 
-select pg_temp.assert_true('RPC SECURITY INVOKER y search_path vacío', (
-  select prosecdef = false
+select pg_temp.assert_true('RPC SECURITY DEFINER postgres y search_path vacío', (
+  select prosecdef = true
+     and pg_get_userbyid(proowner) = 'postgres'
      and pg_get_functiondef(oid) like '%SET search_path TO ''''%'
     from pg_proc where oid = 'public.get_dashboard_summary(text)'::regprocedure
 ));
