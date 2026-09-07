@@ -1,70 +1,67 @@
 'use client';
 
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { formatMoney } from '@/lib/money-format';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { DashboardResponse } from '@/lib/validation/dashboard';
+import { approximateMoneyForChart, moneySeriesIsChartSafe } from '@/lib/money/chart-money';
+import { formatMxn } from '@/lib/money/format-mxn';
+import { EmptyState } from '@/components/shell/EmptyState';
 
-interface CategoryExpense {
-  name: string;
-  amount: number;
-  color: string | null;
-}
+type Category = DashboardResponse['expenses_by_category'][number];
 
-interface CategoryExpensesChartProps {
-  data: CategoryExpense[];
-  currency: string;
-}
-
-interface CustomTooltipPayload {
-  value?: number;
-  name?: string;
-}
-
-interface CustomTooltipProps {
-  active?: boolean;
-  payload?: CustomTooltipPayload[];
-  currency?: string;
-}
-
-function CustomTooltip({ active, payload, currency = 'MXN' }: CustomTooltipProps) {
-  if (active && payload && payload.length) {
-    const entry = payload[0];
+export function CategoryExpensesChart({ data }: { data: Category[] }) {
+  if (!data.length)
     return (
-      <div className="rounded bg-gray-900 p-3 text-white">
-        <span className="font-mono">{formatMoney(entry.value || 0, currency)}</span>
-      </div>
+      <EmptyState
+        title="Sin gastos en el periodo"
+        description="No hay gastos confirmados para agrupar por categoría."
+      />
     );
-  }
-  return null;
-}
-
-export function CategoryExpensesChart({ data, currency }: CategoryExpensesChartProps) {
-  if (!data || data.length === 0) {
+  const safe = moneySeriesIsChartSafe(data.map((item) => item.amount));
+  if (!safe)
     return (
-      <div className="rounded-lg border bg-white p-8 text-center dark:bg-gray-800">
-        <p className="text-gray-600 dark:text-gray-400">No hay gastos registrados</p>
-      </div>
+      <section className="w-full min-w-0 rounded-2xl border bg-surface p-5">
+        <h2 className="font-semibold">Gastos por categoría</h2>
+        <ul className="mt-4 divide-y">
+          {data.map((item) => (
+            <li key={item.category_id ?? 'none'} className="flex justify-between gap-3 py-3">
+              <span>{item.name}</span>
+              <span className="break-words tabular-nums">{formatMxn(item.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     );
-  }
-
-  const chartData = data.slice(0, 10).map((cat) => ({
-    name: cat.name.length > 15 ? `${cat.name.slice(0, 12)}...` : cat.name,
-    amount: cat.amount,
-    fullName: cat.name,
-    color: cat.color || '#94a3b8',
-  }));
-
+  const chart = data
+    .slice(0, 10)
+    .map((item) => ({
+      ...item,
+      geometry: approximateMoneyForChart(item.amount),
+      shortName: item.name.length > 13 ? `${item.name.slice(0, 12)}…` : item.name,
+    }));
   return (
-    <div className="rounded-lg border bg-white p-4 dark:bg-gray-800">
-      <h3 className="mb-4 font-semibold">Gastos por categoría - {currency}</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 150, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis type="number" tick={{ fontSize: 12 }} />
-          <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={140} />
-          <Tooltip content={<CustomTooltip currency={currency} />} />
-          <Bar dataKey="amount" fill="#8b5cf6" />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <section className="w-full min-w-0 rounded-2xl border bg-surface p-5">
+      <h2 className="font-semibold">Gastos por categoría</h2>
+      <div className="mt-4 h-72 w-full min-w-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chart} layout="vertical" margin={{ left: 24 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis type="number" tick={{ fill: 'var(--text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+            <YAxis dataKey="shortName" type="category" width={100} tick={{ fill: 'var(--text-muted)' }} tickLine={false} axisLine={false} />
+            <Tooltip
+              content={({ active, payload }) => {
+                const item = payload?.[0]?.payload as (typeof chart)[number] | undefined;
+                return active && item ? (
+                  <div className="rounded-xl border bg-surface-raised p-3 text-sm text-text shadow-lg">
+                    <p>{item.name}</p>
+                    <p>{formatMxn(item.amount)}</p>
+                  </div>
+                ) : null;
+              }}
+            />
+            <Bar dataKey="geometry" fill="var(--primary)" radius={[0, 6, 6, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
   );
 }

@@ -17,7 +17,7 @@ export function DashboardPeriodSelector({ value, onChange, disabled = false }: D
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="rounded border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 disabled:opacity-50"
+        className="rounded-xl border bg-surface px-3 py-2 text-sm text-text disabled:opacity-50"
         aria-label="Seleccionar período"
       >
         <option value="this_month">Este mes</option>

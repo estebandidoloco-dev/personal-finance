@@ -1,390 +1,261 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSupabase } from '@/components/providers/supabase-provider';
-import { TransactionForm } from '@/components/transactions/TransactionForm';
-import { Plus, Calendar } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { buildCategoryTree, flattenCategoryTree } from '@/lib/categories';
+import { useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
+import { z } from 'zod';
+import {
+  personalAccountResponseSchema,
+  personalTransactionResponseSchema,
+} from '@/lib/validation/financial';
+import { useApiResource } from '@/hooks/use-api-resource';
+import {
+  TransactionForm,
+  type PersonalTransaction,
+} from '@/components/transactions/TransactionForm';
+import { MoneyAmount } from '@/components/dashboard/MoneyAmount';
+import { formatFinancialDate } from '@/lib/dates/financial-date';
+import { transactionStatusLabel } from '@/lib/household/presentation';
+import { AsyncState } from '@/components/shell/AsyncState';
+import { ErrorPanel } from '@/components/shell/ErrorPanel';
+import { EmptyState } from '@/components/shell/EmptyState';
+import { ContextBadge } from '@/components/shell/ContextBadge';
+import { readApiError } from '@/lib/api-error';
 
-interface Transaction {
-  id: string;
-  amount: number;
-  currency: string;
-  kind: 'income' | 'expense';
-  status: 'pending' | 'posted' | 'cancelled' | 'duplicate';
-  date: string;
-  description: string;
-  notes: string | null;
-  is_shared: boolean;
-  category: {
-    id: string;
-    name: string;
-    icon: string | null;
-    color: string | null;
-    type: string;
-  } | null;
-  tags: Array<{ tag: { id: string; name: string; color: string | null } }>;
-  account_id: string;
-}
+const optionSchema = z
+  .object({ id: z.string().uuid(), name: z.string(), type: z.string().optional() })
+  .passthrough();
+const emptyFilters = { start_date: '', end_date: '', account_id: '', category_id: '' };
 
 export default function TransactionsPage() {
-  const { supabase } = useSupabase();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
-  const [newKind, setNewKind] = useState<'income' | 'expense'>('expense');
-  const [filters, setFilters] = useState({
-    start_date: '',
-    end_date: '',
-    category_id: '',
-    account_id: '',
-  });
-  const [page, setPage] = useState(0);
-  const pageSize = 20;
-  const [hasMore, setHasMore] = useState(true);
-  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string; type: string; parent_id: string | null; budget_type: string | null; icon: string | null; color: string | null; is_system: boolean; sort_order: number; user_id: string | null }>>(
-    []
+  const [filters, setFilters] = useState(emptyFilters);
+  const [form, setForm] = useState<{
+    transaction: PersonalTransaction | null;
+    kind: 'income' | 'expense';
+  } | null>(null);
+  const [actionError, setActionError] = useState('');
+  const [actionMenu, setActionMenu] = useState<string | null>(null);
+  const key = JSON.stringify(filters);
+  const resource = useApiResource(
+    async (signal) => {
+      const params = new URLSearchParams({ limit: '100', offset: '0' });
+      Object.entries(filters).forEach(([name, value]) => {
+        if (value) params.set(name, value);
+      });
+      const responses = await Promise.all([
+        fetch(`/api/transactions?${params}`, { signal }),
+        fetch('/api/accounts', { signal }),
+        fetch('/api/categories', { signal }),
+        fetch('/api/tags', { signal }),
+      ]);
+      const payloads: unknown[] = await Promise.all(responses.map((response) => response.json()));
+      if (!responses.every((response) => response.ok))
+        throw new Error('No se pudieron cargar los movimientos.');
+      return {
+        transactions: personalTransactionResponseSchema.array().parse(payloads[0]),
+        accounts: personalAccountResponseSchema.array().parse(payloads[1]),
+        categories: optionSchema.array().parse(payloads[2]),
+        tags: optionSchema.array().parse(payloads[3]),
+      };
+    },
+    key,
+    (data) => data.transactions.length === 0
   );
 
-  const fetchTransactions = async (reset = false, targetPage = reset ? 0 : page) => {
-    setLoading(true);
-    setPageError('');
-    const params = new URLSearchParams();
-    if (filters.start_date) params.set('start_date', filters.start_date);
-    if (filters.end_date) params.set('end_date', filters.end_date);
-    if (filters.category_id) params.set('category_id', filters.category_id);
-    if (filters.account_id) params.set('account_id', filters.account_id);
-    params.set('limit', String(pageSize));
-    params.set('offset', String(targetPage * pageSize));
-
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) {
-      setPageError('Tu sesión no está disponible. Vuelve a iniciar sesión.');
-      setLoading(false);
+  const remove = async (transaction: PersonalTransaction) => {
+    if (!window.confirm(`¿Eliminar «${transaction.description}»?`)) return;
+    setActionError('');
+    const response = await fetch(`/api/transactions/${transaction.id}`, { method: 'DELETE' });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const api = readApiError(payload, 'No se pudo eliminar el movimiento.');
+      setActionError(
+        api.message.includes('Household') || api.message.includes('shared expense')
+          ? 'Este movimiento pertenece a un gasto compartido. Elimínalo desde En pareja.'
+          : api.message
+      );
       return;
     }
-
-    try {
-      const res = await fetch(`/api/transactions?${params}`);
-      if (!res.ok) {
-        const result = (await res.json().catch(() => null)) as { error?: string } | null;
-        setPageError(result?.error || 'No se pudieron cargar las transacciones.');
-        return;
-      }
-
-      const newTx = (await res.json()) as Transaction[];
-      setTransactions((prev) => (reset ? newTx : [...prev, ...newTx]));
-      setHasMore(newTx.length === pageSize);
-      setPage(targetPage);
-    } catch {
-      setPageError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
-    } finally {
-      setLoading(false);
-    }
+    resource.retry();
   };
 
-  const fetchMetadata = async () => {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) {
-      setPageError('Tu sesión no está disponible. Vuelve a iniciar sesión.');
-      return;
-    }
-    const [accRes, catRes] = await Promise.all([
-      supabase.from('accounts').select('id, name').eq('user_id', user.id).order('name'),
-      supabase
-        .from('categories')
-        .select('id, parent_id, name, type, budget_type, icon, color, is_system, sort_order, user_id')
-        .or(`user_id.eq.${user.id},user_id.is.null`)
-        .order('name'),
-    ]);
-    if (accRes.error || catRes.error) {
-      setPageError('No se pudieron cargar las cuentas o categorías.');
-      return;
-    }
-    setAccounts(accRes.data ?? []);
-    setCategories(
-      (catRes.data ?? []).map((category) => ({
-        ...category,
-        is_system: category.is_system ?? false,
-        sort_order: category.sort_order ?? 0,
-      }))
-    );
-  };
-
-  useEffect(() => {
-    // These functions synchronize server-backed state after a filter change.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchMetadata();
-    void fetchTransactions(true, 0);
-    // The callbacks intentionally use the current filter/page snapshot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Eliminar transacción?')) return;
-    setPageError('');
-    try {
-      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const result = (await res.json().catch(() => null)) as { error?: string } | null;
-        setPageError(result?.error || 'No se pudo eliminar la transacción.');
-        return;
-      }
-      await fetchTransactions(true, 0);
-    } catch {
-      setPageError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
-    }
-  };
-
-  const formatAmount = (
-    amount: number,
-    currency: string,
-    kind: 'income' | 'expense',
-    status: Transaction['status']
-  ) => {
-    const signedAmount = kind === 'income' ? amount : -amount;
-    const color =
-      status !== 'posted' ? 'text-gray-500' : kind === 'income' ? 'text-green-600' : 'text-red-600';
-    const sign = signedAmount >= 0 ? '+' : '';
-    return (
-      <span className={`font-mono ${color}`}>
-        {sign}
-        {signedAmount.toLocaleString('es-MX', { style: 'currency', currency })}
-        {status !== 'posted' && ` (${status})`}
-      </span>
-    );
-  };
-
+  const data = resource.status === 'success' || resource.status === 'empty' ? resource.data : null;
+  const hasFilters = Object.values(filters).some(Boolean);
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Transacciones</h1>
-          <p className="text-gray-500">{transactions.length} movimientos</p>
+    <main className="w-full min-w-0 space-y-6">
+      <header className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <ContextBadge />
+          <h1 className="mt-2 text-3xl font-bold break-words">Movimientos personales</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => {
-              setNewKind('expense');
-              setShowForm(true);
-            }}
-            className="flex items-center gap-2 rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700"
-          >
-            <Plus className="h-4 w-4" /> Nuevo gasto
-          </button>
-          <button
-            onClick={() => {
-              setNewKind('income');
-              setShowForm(true);
-            }}
-            className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" /> Nuevo ingreso
-          </button>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      {pageError && (
-        <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{pageError}</div>
+        <button
+          onClick={() => setForm({ transaction: null, kind: 'expense' })}
+          className="min-h-11 w-full rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover sm:w-auto"
+        >
+          Registrar movimiento
+        </button>
+      </header>
+      {actionError && (
+        <p role="alert" className="rounded-xl border border-danger bg-danger-soft p-3 text-danger">
+          {actionError}
+        </p>
       )}
-
-      <div className="mb-6 flex flex-wrap gap-4 rounded-lg border bg-white p-4 dark:bg-gray-800">
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-gray-400" />
+      <section className="grid min-w-0 gap-3 rounded-2xl border bg-surface p-4 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="min-w-0 text-sm">
+          Desde
           <input
             type="date"
             value={filters.start_date}
-            onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-            className="rounded-md border px-3 py-2 text-sm"
+            onChange={(event) => setFilters({ ...filters, start_date: event.target.value })}
+            className="mt-1 w-full min-w-0 bg-surface px-3"
           />
-          <span className="text-gray-400">a</span>
+        </label>
+        <label className="min-w-0 text-sm">
+          Hasta
           <input
             type="date"
             value={filters.end_date}
-            onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-            className="rounded-md border px-3 py-2 text-sm"
+            onChange={(event) => setFilters({ ...filters, end_date: event.target.value })}
+            className="mt-1 w-full min-w-0 bg-surface px-3"
           />
-        </div>
-        <select
-          value={filters.category_id}
-          onChange={(e) => setFilters({ ...filters, category_id: e.target.value })}
-          className="rounded-md border px-3 py-2 text-sm"
-        >
-          <option value="">Todas las categorías</option>
-          {flattenCategoryTree(buildCategoryTree(categories)).map((c) => (
-            <option key={c.id} value={c.id}>
-              {'— '.repeat(c.depth)}{c.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filters.account_id}
-          onChange={(e) => setFilters({ ...filters, account_id: e.target.value })}
-          className="rounded-md border px-3 py-2 text-sm"
-        >
-          <option value="">Todas las cuentas</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Lista */}
-      <div className="overflow-hidden rounded-lg border bg-white dark:bg-gray-800">
-        {loading && transactions.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">Cargando...</div>
-        ) : transactions.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
-            <p className="mb-4">No hay transacciones</p>
-            <button onClick={() => setShowForm(true)} className="text-blue-600 hover:underline">
-              Crear la primera
+        </label>
+        <label className="min-w-0 text-sm">
+          Cuenta
+          <select
+            value={filters.account_id}
+            onChange={(event) => setFilters({ ...filters, account_id: event.target.value })}
+            className="mt-1 w-full min-w-0 bg-surface px-3"
+          >
+            <option value="">Todas</option>
+            {data?.accounts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="min-w-0 text-sm">
+          Categoría
+          <select
+            value={filters.category_id}
+            onChange={(event) => setFilters({ ...filters, category_id: event.target.value })}
+            className="mt-1 w-full min-w-0 bg-surface px-3"
+          >
+            <option value="">Todas</option>
+            {data?.categories.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+      {data && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-medium">
+            {data.transactions.length}{' '}
+            {data.transactions.length === 1 ? 'movimiento' : 'movimientos'}
+          </p>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={() => setFilters(emptyFilters)}
+              className="min-h-11 rounded-xl border px-4 text-sm"
+            >
+              Limpiar filtros
             </button>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-900">
-                  <tr>
-                    <th className="p-3 text-left text-sm font-medium text-gray-500">Fecha</th>
-                    <th className="p-3 text-left text-sm font-medium text-gray-500">Descripción</th>
-                    <th className="p-3 text-left text-sm font-medium text-gray-500">Categoría</th>
-                    <th className="p-3 text-right text-sm font-medium text-gray-500">Importe</th>
-                    <th className="p-3 text-right text-sm font-medium text-gray-500">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                      <td className="p-3 text-sm whitespace-nowrap">
-                        {format(parseISO(tx.date), 'dd/MM/yyyy', { locale: es })}
-                      </td>
-                      <td className="p-3 text-sm">
-                        <p className="font-medium">{tx.description}</p>
-                        {tx.notes && <p className="text-xs text-gray-500">{tx.notes}</p>}
-                        {tx.tags.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {tx.tags.map(({ tag }) => (
-                              <span
-                                key={tag.name}
-                                className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-700"
-                                style={{
-                                  backgroundColor: `${tag.color ?? '#6b7280'}20`,
-                                  color: tag.color ?? undefined,
-                                }}
-                              >
-                                {tag.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-3 text-sm">
-                        {tx.category && (
-                          <span
-                            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
-                            style={{
-                              backgroundColor: `${tx.category.color ?? '#6b7280'}20`,
-                              color: tx.category.color ?? undefined,
-                            }}
-                          >
-                            {tx.category.icon && <span>📁</span>}
-                            {tx.category.name}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 text-right font-mono text-sm">
-                        {formatAmount(tx.amount, tx.currency, tx.kind, tx.status)}
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {tx.is_shared && (
-                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                              Compartido
-                            </span>
-                          )}
-                          <button
-                            onClick={() => {
-                              setEditingTx(tx);
-                              setShowForm(true);
-                            }}
-                            className="text-sm text-blue-600 hover:underline"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => handleDelete(tx.id)}
-                            className="text-sm text-red-600 hover:underline"
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Paginación */}
-            {hasMore && (
-              <div className="border-t p-4 text-center">
-                <button
-                  onClick={() => {
-                    const nextPage = page + 1;
-                    void fetchTransactions(false, nextPage);
-                  }}
-                  disabled={loading}
-                  className="rounded bg-blue-600 px-6 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  Cargar más
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Modales */}
-      {showForm && (
+          )}
+        </div>
+      )}
+      {resource.status === 'loading' && <AsyncState label="Cargando movimientos…" />}
+      {resource.status === 'error' && (
+        <ErrorPanel message={resource.error} onRetry={resource.retry} />
+      )}
+      {resource.status === 'empty' && <EmptyState title="No hay movimientos" />}
+      {resource.status === 'success' && (
+        <ul className="grid min-w-0 gap-3">
+          {resource.data.transactions.map((transaction) => {
+            const account = resource.data.accounts.find(
+              (item) => item.id === transaction.account_id
+            );
+            return (
+              <li
+                key={transaction.id}
+                className="relative min-w-0 rounded-2xl border bg-surface p-4"
+              >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold break-words">{transaction.description}</p>
+                    <p className="mt-1 break-words text-sm text-text-muted">
+                      {account?.name ?? 'Cuenta'} · {transaction.category?.name ?? 'Sin categoría'}{' '}
+                      · {formatFinancialDate(transaction.date)}
+                    </p>
+                    <p className="mt-1 text-xs text-text-muted">
+                      {transaction.kind === 'income' ? 'Ingreso' : 'Gasto'} ·{' '}
+                      {transactionStatusLabel(transaction.status)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-start gap-1">
+                    <span
+                      className={`break-words font-semibold tabular-nums ${transaction.kind === 'income' ? 'text-income' : 'text-expense'}`}
+                    >
+                      <MoneyAmount amount={transaction.amount} sign={transaction.kind === 'income' ? 'positive' : 'negative'} />
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Acciones para ${transaction.description}`}
+                      aria-expanded={actionMenu === transaction.id}
+                      onClick={() =>
+                        setActionMenu((value) => (value === transaction.id ? null : transaction.id))
+                      }
+                      className="grid size-11 place-items-center rounded-xl hover:bg-surface-subtle"
+                    >
+                      <MoreHorizontal aria-hidden="true" className="size-5" />
+                    </button>
+                  </div>
+                </div>
+                {actionMenu === transaction.id && (
+                  <div className="surface-enter absolute top-14 right-4 z-20 min-w-36 rounded-xl border bg-surface-raised p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActionMenu(null);
+                        setForm({ transaction, kind: transaction.kind });
+                      }}
+                      className="min-h-11 w-full rounded-lg px-3 text-left text-sm"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActionMenu(null);
+                        void remove(transaction);
+                      }}
+                      className="min-h-11 w-full rounded-lg px-3 text-left text-sm text-danger hover:bg-danger-soft"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {form && data && (
         <TransactionForm
-          onClose={() => {
-            setShowForm(false);
-            setEditingTx(null);
+          initialData={form.transaction}
+          initialKind={form.kind}
+          accounts={data.accounts}
+          categories={data.categories}
+          tags={data.tags}
+          onClose={() => setForm(null)}
+          onSaved={() => {
+            setForm(null);
+            resource.retry();
           }}
-          onSuccess={() => fetchTransactions(true, 0)}
-          defaultKind={newKind}
-          initialData={
-            editingTx
-              ? {
-                  id: editingTx.id,
-                  account_id: editingTx.account_id,
-                  category_id: editingTx.category?.id,
-                  kind: editingTx.kind,
-                  amount: editingTx.amount,
-                  currency: editingTx.currency,
-                  date: editingTx.date,
-                  description: editingTx.description,
-                  notes: editingTx.notes || undefined,
-                  is_shared: editingTx.is_shared,
-                  status: editingTx.status,
-                  tag_ids: editingTx.tags.map(({ tag }) => tag.id),
-                }
-              : undefined
-          }
         />
       )}
-    </div>
+    </main>
   );
 }

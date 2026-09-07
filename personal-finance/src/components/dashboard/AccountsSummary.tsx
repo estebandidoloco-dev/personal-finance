@@ -1,56 +1,41 @@
-'use client';
+import Link from 'next/link';
+import type { DashboardResponse } from '@/lib/validation/dashboard';
+import { accountTypeLabel } from '@/lib/household/presentation';
+import { MoneyAmount } from './MoneyAmount';
+import { EmptyState } from '@/components/shell/EmptyState';
 
-import { formatMoney } from '@/lib/money-format';
-
-interface Account {
-  id: string;
-  name: string;
-  type: string;
-  balance: number;
-  currency: string;
-}
-
-interface AccountsSummaryProps {
-  accounts: Account[];
-}
-
-export function AccountsSummary({ accounts }: AccountsSummaryProps) {
-  if (accounts.length === 0) {
+export function AccountsSummary({ accounts }: { accounts: DashboardResponse['accounts'] }) {
+  if (!accounts.length)
     return (
-      <div className="rounded-lg border bg-white p-8 text-center dark:bg-gray-800">
-        <p className="mb-4 text-gray-600 dark:text-gray-400">Aún no tienes cuentas</p>
-        <a href="/dashboard/accounts/new" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-          Crear tu primera cuenta
-        </a>
-      </div>
+      <EmptyState
+        title="Aún no tienes cuentas"
+        action={
+          <Link
+            href="/dashboard/accounts/new"
+            className="font-medium text-primary hover:underline"
+          >
+            Crear tu primera cuenta
+          </Link>
+        }
+      />
     );
-  }
-
-  const typeLabels: Record<string, string> = {
-    checking: 'Corriente',
-    savings: 'Ahorros',
-    credit: 'Crédito',
-    cash: 'Efectivo',
-    investment: 'Inversión',
-    other: 'Otro',
-  };
-
   return (
-    <div className="rounded-lg border bg-white dark:bg-gray-800">
-      <div className="border-b p-4">
-        <h3 className="font-semibold">Mis cuentas</h3>
+    <section className="w-full min-w-0 rounded-2xl border bg-surface">
+      <div className="border-b p-5">
+        <h2 className="font-semibold">Cuentas personales</h2>
+        <p className="text-sm text-text-muted">Saldo actual, independiente del periodo.</p>
       </div>
       <ul className="divide-y">
         {accounts.map((account) => (
-          <li key={account.id} className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+          <li key={account.id} className="flex flex-wrap items-center justify-between gap-3 p-5">
             <div>
               <p className="font-medium">{account.name}</p>
-              <p className="text-sm text-gray-500">{typeLabels[account.type as keyof typeof typeLabels] || account.type}</p>
+              <p className="text-sm text-text-muted">{accountTypeLabel(account.type)}</p>
             </div>
-            <p className="font-mono font-semibold">{formatMoney(account.balance, account.currency)}</p>
+            <MoneyAmount amount={account.balance} className="font-semibold" />
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   );
 }

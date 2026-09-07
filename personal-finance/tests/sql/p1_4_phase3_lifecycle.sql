@@ -34,7 +34,15 @@ select pg_temp.assert_true('create_household forma uno current y MXN', (
   select status = 'forming' and currency = 'MXN'
     from public.households
    where id = (select household_id from created_households where label = 'ab')
-) and (select count(*) = 1 from public.household_members));
+) and (
+  select count(*) = 1
+     and count(*) filter (
+       where user_id = '34000000-0000-4000-8000-000000000001'
+     ) = 1
+    from public.household_members
+   where household_id = (select household_id from created_households where label = 'ab')
+     and status = 'current'
+));
 
 insert into invite_tokens
 select 'accept', invitation_id, invitation_token
@@ -73,7 +81,18 @@ select pg_temp.assert_true('invitación aceptada se consume una vez', (
   select invitation.status = 'accepted' from public.households household
   join public.household_invitations invitation on invitation.household_id = household.id
   where household.id = (select household_id from created_households where label = 'ab')
-) and (select count(*) = 2 from public.household_members));
+) and (
+  select count(*) = 2
+     and count(*) filter (
+       where user_id in (
+         '34000000-0000-4000-8000-000000000001',
+         '34000000-0000-4000-8000-000000000002'
+       )
+     ) = 2
+    from public.household_members
+   where household_id = (select household_id from created_households where label = 'ab')
+     and status = 'current'
+));
 set role authenticated;
 select set_config('request.jwt.claim.sub', '34000000-0000-4000-8000-000000000002', true);
 do $$ begin
@@ -90,13 +109,32 @@ select pg_temp.assert_true('leave cierra y archiva a ambos', (
   select status = 'closed' from public.households
    where id = (select household_id from created_households where label = 'ab')
 ) and (
-  select count(*) = 2 from public.household_members where status = 'archived'
+  select count(*) = 2
+     and count(*) filter (
+       where user_id in (
+         '34000000-0000-4000-8000-000000000001',
+         '34000000-0000-4000-8000-000000000002'
+       )
+     ) = 2
+    from public.household_members
+   where household_id = (select household_id from created_households where label = 'ab')
+     and status = 'archived'
 ));
 
 select set_config('request.jwt.claim.sub', '34000000-0000-4000-8000-000000000001', true);
 insert into created_households values ('a2', public.create_household('Casa A2'));
 select pg_temp.assert_true('archived libera cupo para otro Household',
-  (select count(*) = 1 from public.households where status = 'forming'));
+  (select count(*) = 1
+     from public.households
+    where id = (select household_id from created_households where label = 'a2')
+      and status = 'forming')
+  and (select count(*) = 1
+          and count(*) filter (
+            where user_id = '34000000-0000-4000-8000-000000000001'
+          ) = 1
+         from public.household_members
+        where household_id = (select household_id from created_households where label = 'a2')
+          and status = 'current'));
 select public.leave_household((select household_id from created_households where label = 'a2'));
 
 select set_config('request.jwt.claim.sub', '34000000-0000-4000-8000-000000000003', true);

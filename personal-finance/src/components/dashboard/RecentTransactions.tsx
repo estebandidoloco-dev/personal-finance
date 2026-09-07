@@ -1,94 +1,10 @@
-'use client';
+import Link from 'next/link';
+import type { DashboardResponse } from '@/lib/validation/dashboard';
+import { formatFinancialDate } from '@/lib/dates/financial-date';
+import { MoneyAmount } from './MoneyAmount';
+import { EmptyState } from '@/components/shell/EmptyState';
 
-import { formatMoney } from '@/lib/money-format';
-import { formatLocalDateShort } from '@/lib/date-format';
-
-interface Transaction {
-  id: string;
-  date: string;
-  description: string;
-  amount: number;
-  kind: 'income' | 'expense';
-  currency: string;
-  category: { id: string; name: string; color: string | null } | null;
-  account: { id: string; name: string };
-}
-
-interface RecentTransactionsProps {
-  transactions: Transaction[];
-}
-
-export function RecentTransactions({ transactions }: RecentTransactionsProps) {
-  if (!transactions || transactions.length === 0) {
-    return (
-      <div className="rounded-lg border bg-white p-8 text-center dark:bg-gray-800">
-        <p className="mb-4 text-gray-600 dark:text-gray-400">No hay movimientos recientes</p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <a href="/dashboard/transactions" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-            Ver todas las transacciones
-          </a>
-          <span className="hidden text-gray-400 sm:inline">•</span>
-          <a href="/dashboard/import" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-            Importar CSV
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border bg-white dark:bg-gray-800">
-      <div className="border-b p-4">
-        <h3 className="font-semibold">Movimientos recientes</h3>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="border-b bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th className="p-3 text-left text-xs font-medium uppercase text-gray-600 dark:text-gray-400">Fecha</th>
-              <th className="p-3 text-left text-xs font-medium uppercase text-gray-600 dark:text-gray-400">Descripción</th>
-              <th className="p-3 text-left text-xs font-medium uppercase text-gray-600 dark:text-gray-400">Categoría</th>
-              <th className="p-3 text-left text-xs font-medium uppercase text-gray-600 dark:text-gray-400">Cuenta</th>
-              <th className="p-3 text-right text-xs font-medium uppercase text-gray-600 dark:text-gray-400">Importe</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {transactions.map((tx) => (
-              <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="whitespace-nowrap p-3 text-sm text-gray-600 dark:text-gray-400">
-                  {formatLocalDateShort(tx.date)}
-                </td>
-                <td className="p-3 text-sm font-medium">{tx.description}</td>
-                <td className="p-3 text-sm">
-                  {tx.category ? (
-                    <span
-                      className="inline-block rounded px-2 py-1 text-xs"
-                      style={{
-                        backgroundColor: `${tx.category.color || '#94a3b8'}20`,
-                        color: tx.category.color || '#64748b',
-                      }}
-                    >
-                      {tx.category.name}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-gray-500">Sin categoría</span>
-                  )}
-                </td>
-                <td className="p-3 text-sm text-gray-600 dark:text-gray-400">{tx.account.name}</td>
-                <td className={`p-3 text-right font-mono text-sm font-semibold ${tx.kind === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                  {tx.kind === 'income' ? '+' : '-'}
-                  {formatMoney(tx.amount, tx.currency)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="border-t p-4 text-center">
-        <a href="/dashboard/transactions" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-          Ver todas las transacciones →
-        </a>
-      </div>
-    </div>
-  );
+export function RecentTransactions({ transactions }: { transactions: DashboardResponse['recent_transactions'] }) {
+  if (!transactions.length) return <EmptyState title="No hay movimientos confirmados" description="Aquí aparecerán tus últimos 10 movimientos, sin depender del periodo." />;
+  return <section className="min-w-0 rounded-2xl border bg-surface"><div className="flex min-w-0 items-center justify-between gap-3 border-b p-5"><div className="min-w-0"><h2 className="font-semibold">Movimientos recientes</h2><p className="text-sm text-text-muted">Tus últimos 10 movimientos confirmados.</p></div><Link href="/dashboard/transactions" className="shrink-0 text-sm font-medium text-primary hover:underline">Ver todos</Link></div><ul className="divide-y">{transactions.map((transaction) => <li key={transaction.id} className="grid min-w-0 gap-2 p-5 sm:grid-cols-[7rem_1fr_auto] sm:items-center"><time className="text-sm text-text-muted">{formatFinancialDate(transaction.date)}</time><div className="min-w-0"><p className="break-words font-medium">{transaction.description}</p><p className="break-words text-sm text-text-muted">{transaction.account.name} · {transaction.category?.name ?? 'Sin categoría'}</p></div><MoneyAmount amount={transaction.amount} sign={transaction.kind === 'income' ? 'positive' : 'negative'} className={transaction.kind === 'income' ? 'text-income' : 'text-expense'} /></li>)}</ul></section>;
 }

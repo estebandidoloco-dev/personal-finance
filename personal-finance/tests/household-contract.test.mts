@@ -6,6 +6,7 @@ import { exactAggregateSignedMoneySchema, exactPositiveMoneySchema, exactSignedM
 
 const userA = '64000000-0000-4000-8000-000000000001';
 const userB = '64000000-0000-4000-8000-000000000002';
+const fakeUser = '64000000-0000-4000-8000-000000000003';
 const baseExpense = {
   household_id: '64100000-0000-4000-8000-000000000001',
   funding_source: 'personal_account' as const,
@@ -44,6 +45,98 @@ test('interpersonal balance contract accepts unbounded exact aggregate strings',
   }).success, true);
   for (const invalid of ['1e16', '1E16', '1,000.00', ' 1.00', '-0.00']) {
     assert.equal(exactAggregateSignedMoneySchema.safeParse(invalid).success, false, invalid);
+  }
+});
+
+test('archived forming Household accepts one real zero position', () => {
+  assert.equal(householdBalanceResponseSchema.safeParse({
+    household_id: baseExpense.household_id,
+    currency: 'MXN',
+    positions: [{ user_id: userA, amount: '0.00' }],
+    owed_by_user_id: null,
+    owed_to_user_id: null,
+    amount: '0.00',
+  }).success, true);
+});
+
+test('interpersonal balance contract derives debtor and creditor from positions', () => {
+  const zeroBalance = {
+    household_id: baseExpense.household_id,
+    currency: 'MXN' as const,
+    positions: [
+      { user_id: userA, amount: '0.00' },
+      { user_id: userB, amount: '0.00' },
+    ],
+    owed_by_user_id: null,
+    owed_to_user_id: null,
+    amount: '0.00',
+  };
+  const realDebt = {
+    ...zeroBalance,
+    positions: [
+      { user_id: userA, amount: '50.00' },
+      { user_id: userB, amount: '-50.00' },
+    ],
+    owed_by_user_id: userB,
+    owed_to_user_id: userA,
+    amount: '50.00',
+  };
+
+  assert.equal(householdBalanceResponseSchema.safeParse(zeroBalance).success, true);
+  assert.equal(householdBalanceResponseSchema.safeParse(realDebt).success, true);
+
+  const invalidBalances = [
+    {
+      label: 'single with owed_by',
+      value: { ...zeroBalance, positions: [{ user_id: userA, amount: '0.00' }], owed_by_user_id: userA },
+    },
+    {
+      label: 'single with owed_to',
+      value: { ...zeroBalance, positions: [{ user_id: userA, amount: '0.00' }], owed_to_user_id: userA },
+    },
+    {
+      label: 'single with both IDs',
+      value: {
+        ...zeroBalance,
+        positions: [{ user_id: userA, amount: '0.00' }],
+        owed_by_user_id: userA,
+        owed_to_user_id: fakeUser,
+      },
+    },
+    {
+      label: 'single with non-zero position',
+      value: { ...zeroBalance, positions: [{ user_id: userA, amount: '1.00' }], amount: '1.00' },
+    },
+    { label: 'zero balance with IDs', value: { ...zeroBalance, owed_by_user_id: userB, owed_to_user_id: userA } },
+    { label: 'inverted IDs', value: { ...realDebt, owed_by_user_id: userA, owed_to_user_id: userB } },
+    { label: 'fake owed_by', value: { ...realDebt, owed_by_user_id: fakeUser } },
+    { label: 'fake owed_to', value: { ...realDebt, owed_to_user_id: fakeUser } },
+    { label: 'same IDs', value: { ...realDebt, owed_by_user_id: userA, owed_to_user_id: userA } },
+    { label: 'only owed_by null', value: { ...realDebt, owed_by_user_id: null } },
+    { label: 'only owed_to null', value: { ...realDebt, owed_to_user_id: null } },
+    { label: 'real debt with both IDs null', value: { ...realDebt, owed_by_user_id: null, owed_to_user_id: null } },
+    { label: 'wrong amount', value: { ...realDebt, amount: '49.99' } },
+    {
+      label: 'two positive positions',
+      value: { ...realDebt, positions: [{ user_id: userA, amount: '50.00' }, { user_id: userB, amount: '50.00' }] },
+    },
+    {
+      label: 'two negative positions',
+      value: { ...realDebt, positions: [{ user_id: userA, amount: '-50.00' }, { user_id: userB, amount: '-50.00' }] },
+    },
+    {
+      label: 'duplicate user_id',
+      value: { ...realDebt, positions: [{ user_id: userA, amount: '50.00' }, { user_id: userA, amount: '-50.00' }] },
+    },
+    {
+      label: 'invalid money',
+      value: { ...realDebt, positions: [{ user_id: userA, amount: '5e1' }, { user_id: userB, amount: '-50.00' }] },
+    },
+  ];
+
+  for (const { label, value } of invalidBalances) {
+    assert.doesNotThrow(() => householdBalanceResponseSchema.safeParse(value), label);
+    assert.equal(householdBalanceResponseSchema.safeParse(value).success, false, label);
   }
 });
 

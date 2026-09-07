@@ -31,16 +31,16 @@ export function LogoutButton() {
   };
 
   return (
-    <div className="text-right">
+    <div>
       <button
         type="button"
         onClick={handleLogout}
         disabled={loading}
-        className="text-sm text-gray-600 hover:text-gray-900 hover:underline disabled:opacity-50"
+        className="min-h-11 w-full rounded-xl border border-danger bg-danger-soft px-4 text-left text-sm font-medium text-danger hover:opacity-80 disabled:opacity-50"
       >
         {loading ? 'Cerrando sesión...' : 'Cerrar sesión'}
       </button>
-      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

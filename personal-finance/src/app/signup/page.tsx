@@ -46,13 +46,13 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow dark:bg-gray-800">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md rounded-2xl border bg-surface p-8 shadow-sm">
         <h1 className="mb-6 text-center text-2xl font-bold">Crear cuenta</h1>
 
-        {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+        {error && <div role="alert" className="mb-4 rounded-xl border border-danger bg-danger-soft p-3 text-sm text-danger">{error}</div>}
         {notice && (
-          <div className="mb-4 rounded bg-green-100 p-3 text-sm text-green-700">{notice}</div>
+          <div className="mb-4 rounded-xl border border-success bg-success-soft p-3 text-sm text-success">{notice}</div>
         )}
 
         <form onSubmit={handleSignup} className="space-y-4">
@@ -63,7 +63,7 @@ export default function SignupPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="w-full bg-surface px-3 py-2"
             />
           </div>
           <div>
@@ -73,7 +73,7 @@ export default function SignupPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="w-full bg-surface px-3 py-2"
             />
           </div>
           <div>
@@ -84,21 +84,21 @@ export default function SignupPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full rounded-md border px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="w-full bg-surface px-3 py-2"
             />
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded bg-green-600 py-2 text-white hover:bg-green-700 disabled:opacity-50"
+            className="min-h-11 w-full rounded-xl bg-primary py-2 text-on-primary hover:bg-primary-hover disabled:opacity-50"
           >
             {loading ? 'Creando...' : 'Crear cuenta'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+        <p className="mt-6 text-center text-sm text-text-muted">
           ¿Ya tienes cuenta?{' '}
-          <a href="/login" className="text-blue-600 hover:underline">
+          <a href="/login" className="text-primary hover:underline">
             Inicia sesión
           </a>
         </p>

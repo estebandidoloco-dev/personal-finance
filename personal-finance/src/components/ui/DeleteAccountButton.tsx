@@ -37,11 +37,11 @@ export function DeleteAccountButton({ accountId }: DeleteAccountButtonProps) {
         type="button"
         onClick={handleDelete}
         disabled={deleting}
-        className="text-sm text-red-600 hover:underline disabled:opacity-50"
+        className="min-h-11 text-sm text-danger hover:underline disabled:opacity-50"
       >
         {deleting ? 'Eliminando...' : 'Eliminar'}
       </button>
-      {error && <p className="mt-1 max-w-xs text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="mt-1 max-w-xs text-sm text-danger">{error}</p>}
     </div>
   );
 }

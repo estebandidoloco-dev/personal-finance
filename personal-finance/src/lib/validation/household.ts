@@ -32,7 +32,7 @@ export const householdBalanceResponseSchema = z.object({
   positions: z.array(z.object({
     user_id: z.string().uuid(),
     amount: exactAggregateSignedMoneySchema,
-  }).strict()).length(2),
+  }).strict()).min(1).max(2),
   owed_by_user_id: z.string().uuid().nullable(),
   owed_to_user_id: z.string().uuid().nullable(),
   amount: exactAggregateUnsignedMoneySchema,
@@ -40,16 +40,60 @@ export const householdBalanceResponseSchema = z.object({
   if (!aggregateUnsignedMoneyPattern.test(value.amount)
       || value.positions.some((position) => !aggregateSignedMoneyPattern.test(position.amount)
         || position.amount === '-0.00')) return;
-  const positions = value.positions.map((position) => exactMoneyToCents(position.amount));
-  if (positions[0] + positions[1] !== BigInt('0')) {
+  if (new Set(value.positions.map((position) => position.user_id)).size !== value.positions.length) {
+    context.addIssue({ code: 'custom', message: 'Las posiciones deben pertenecer a usuarios distintos', path: ['positions'] });
+  }
+  const positions = value.positions.map((position) => ({
+    userId: position.user_id,
+    cents: exactMoneyToCents(position.amount),
+  }));
+  if (positions.reduce((total, position) => total + position.cents, BigInt('0')) !== BigInt('0')) {
     context.addIssue({ code: 'custom', message: 'Las posiciones deben sumar exactamente 0.00', path: ['positions'] });
   }
   const expectedAmount = positions.reduce((maximum, position) => {
-    const absolute = position < BigInt('0') ? -position : position;
+    const absolute = position.cents < BigInt('0') ? -position.cents : position.cents;
     return absolute > maximum ? absolute : maximum;
   }, BigInt('0'));
   if (exactMoneyToCents(value.amount) !== expectedAmount) {
     context.addIssue({ code: 'custom', message: 'El importe no coincide con las posiciones', path: ['amount'] });
+  }
+
+  if (positions.length === 1) {
+    if (positions[0].cents !== BigInt('0')) {
+      context.addIssue({ code: 'custom', message: 'Una posición única debe ser exactamente 0.00', path: ['positions', 0, 'amount'] });
+    }
+    if (value.owed_by_user_id !== null) {
+      context.addIssue({ code: 'custom', message: 'Un balance individual no tiene deudor', path: ['owed_by_user_id'] });
+    }
+    if (value.owed_to_user_id !== null) {
+      context.addIssue({ code: 'custom', message: 'Un balance individual no tiene acreedor', path: ['owed_to_user_id'] });
+    }
+    return;
+  }
+
+  const debtor = positions.find((position) => position.cents < BigInt('0'));
+  const creditor = positions.find((position) => position.cents > BigInt('0'));
+  const zeroBalance = positions.every((position) => position.cents === BigInt('0'));
+
+  if (zeroBalance) {
+    if (value.owed_by_user_id !== null) {
+      context.addIssue({ code: 'custom', message: 'Un balance en cero no tiene deudor', path: ['owed_by_user_id'] });
+    }
+    if (value.owed_to_user_id !== null) {
+      context.addIssue({ code: 'custom', message: 'Un balance en cero no tiene acreedor', path: ['owed_to_user_id'] });
+    }
+    return;
+  }
+
+  if (debtor === undefined || creditor === undefined) {
+    context.addIssue({ code: 'custom', message: 'Una deuda debe tener una posición positiva y una negativa', path: ['positions'] });
+    return;
+  }
+  if (value.owed_by_user_id !== debtor.userId) {
+    context.addIssue({ code: 'custom', message: 'El deudor debe coincidir con la posición negativa', path: ['owed_by_user_id'] });
+  }
+  if (value.owed_to_user_id !== creditor.userId) {
+    context.addIssue({ code: 'custom', message: 'El acreedor debe coincidir con la posición positiva', path: ['owed_to_user_id'] });
   }
 });
 
@@ -82,6 +126,11 @@ const statusSchema = z.enum(['pending', 'posted', 'cancelled', 'duplicate']);
 const splitSchema = z.object({
   user_id: householdIdSchema,
   amount: exactNonNegativeMoneySchema,
+}).strict();
+export const householdCategoryProjectionSchema = z.object({
+  id: householdIdSchema,
+  name: z.string().min(1),
+  color: z.string().nullable(),
 }).strict();
 
 export const householdCreateSchema = z.object({
@@ -142,6 +191,119 @@ export const sharedExpenseCreateSchema = z.object({
 
 export const sharedExpenseUpdateSchema = z.object(sharedExpenseFields).strict()
   .refine(validSplits, { message: 'Los splits no corresponden al modo seleccionado', path: ['splits'] });
+
+const householdExpenseDetailBase = {
+  id: householdIdSchema,
+  household_id: householdIdSchema,
+  recorded_by_user_id: householdIdSchema,
+  split_mode: z.enum(['equal', 'custom']),
+  category_id: householdIdSchema.nullable(),
+  category: householdCategoryProjectionSchema.nullable(),
+  amount: exactPositiveMoneySchema,
+  currency: z.literal('MXN'),
+  date: financialDateSchema,
+  description: z.string(),
+  notes: z.string().nullable(),
+  status: statusSchema,
+  splits: z.array(splitSchema).length(2),
+  created_at: z.string().datetime({ offset: true }),
+  updated_at: z.string().datetime({ offset: true }),
+};
+
+export const householdExpenseDetailResponseSchema = z.discriminatedUnion('funding_source', [
+  z.object({
+    ...householdExpenseDetailBase,
+    funding_source: z.literal('personal_account'),
+    source_account_id: householdIdSchema.nullable(),
+    personal_payer_user_id: householdIdSchema,
+  }).strict(),
+  z.object({
+    ...householdExpenseDetailBase,
+    funding_source: z.literal('household_account'),
+    source_account_id: householdIdSchema,
+    personal_payer_user_id: z.null(),
+  }).strict(),
+]).superRefine((value, context) => {
+  if ((value.category === null) !== (value.category_id === null)
+      || (value.category !== null && value.category.id !== value.category_id)) {
+    context.addIssue({ code: 'custom', message: 'La categoría no coincide con category_id', path: ['category'] });
+  }
+  if (new Set(value.splits.map((split) => split.user_id)).size !== 2) {
+    context.addIssue({ code: 'custom', message: 'Los usuarios de los splits deben ser distintos', path: ['splits'] });
+  }
+  if (!/^(0|[1-9]\d{0,11})\.\d{2}$/.test(value.amount)
+      || value.splits.some((split) => !/^(0|[1-9]\d{0,11})\.\d{2}$/.test(split.amount))) return;
+  const splitTotal = value.splits.reduce(
+    (total, split) => total + exactMoneyToCents(split.amount), BigInt('0'),
+  );
+  if (splitTotal !== exactMoneyToCents(value.amount)) {
+    context.addIssue({ code: 'custom', message: 'Los splits deben sumar exactamente el importe', path: ['splits'] });
+  }
+});
+
+const householdActivityBase = {
+  id: householdIdSchema,
+  household_expense_id: householdIdSchema.nullable(),
+  personal_payer_user_id: householdIdSchema.nullable(),
+  recorded_by_user_id: householdIdSchema,
+  account_id: householdIdSchema.nullable(),
+  amount: exactPositiveMoneySchema,
+  currency: z.literal('MXN'),
+  date: financialDateSchema,
+  description: z.string(),
+  notes: z.string().nullable(),
+  status: statusSchema,
+  category_id: householdIdSchema.nullable(),
+  category: householdCategoryProjectionSchema.nullable(),
+  created_at: z.string().datetime({ offset: true }),
+  updated_at: z.string().datetime({ offset: true }),
+};
+
+export const householdActivityResponseSchema = z.discriminatedUnion('entry_type', [
+  z.object({
+    ...householdActivityBase,
+    entry_type: z.literal('household_transaction'),
+    household_expense_id: z.null(),
+    funding_source: z.null(),
+    personal_payer_user_id: z.null(),
+    kind: z.enum(['income', 'expense']),
+    split_mode: z.null(),
+    category_id: z.null(),
+    category: z.null(),
+    splits: z.null(),
+  }).strict(),
+  z.object({
+    ...householdActivityBase,
+    entry_type: z.literal('shared_expense'),
+    household_expense_id: householdIdSchema,
+    funding_source: z.enum(['personal_account', 'household_account']),
+    kind: z.literal('expense'),
+    split_mode: z.enum(['equal', 'custom']),
+    splits: z.array(splitSchema).length(2),
+  }).strict(),
+]).superRefine((value, context) => {
+  if (value.entry_type !== 'shared_expense') return;
+  if ((value.category === null) !== (value.category_id === null)
+      || (value.category !== null && value.category.id !== value.category_id)) {
+    context.addIssue({ code: 'custom', message: 'La categoría no coincide con category_id', path: ['category'] });
+  }
+  if (new Set(value.splits.map((split) => split.user_id)).size !== 2) {
+    context.addIssue({ code: 'custom', message: 'Los usuarios de los splits deben ser distintos', path: ['splits'] });
+  }
+  if (!/^(0|[1-9]\d{0,11})\.\d{2}$/.test(value.amount)
+      || value.splits.some((split) => !/^(0|[1-9]\d{0,11})\.\d{2}$/.test(split.amount))) return;
+  const total = value.splits.reduce(
+    (sum, split) => sum + exactMoneyToCents(split.amount), BigInt('0'),
+  );
+  if (total !== exactMoneyToCents(value.amount)) {
+    context.addIssue({ code: 'custom', message: 'Los splits deben sumar exactamente el importe', path: ['splits'] });
+  }
+});
+
+export const householdActivityPageResponseSchema = z.object({
+  items: z.array(householdActivityResponseSchema),
+  next_cursor: z.string().nullable(),
+}).strict();
 
 export const householdListQuerySchema = z.object({
   household_id: householdIdSchema,

@@ -1,0 +1,15 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { HouseholdAccount } from '@/lib/contracts/household';
+import { normalizeMoneyInput } from '@/lib/money/exact-money';
+import { readApiError } from '@/lib/api-error';
+
+const TYPES = [['checking', 'Cuenta corriente'], ['savings', 'Ahorro'], ['credit', 'Crédito'], ['cash', 'Efectivo'], ['investment', 'Inversión'], ['other', 'Otra']] as const;
+
+export function HouseholdAccountForm({ householdId, account }: { householdId: string; account?: HouseholdAccount }) {
+  const router = useRouter(); const [form, setForm] = useState({ name: account?.name ?? '', type: account?.type ?? 'checking', initial_balance: '0.00' }); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); setError(''); const initial = account ? null : normalizeMoneyInput(form.initial_balance); if (!account && !initial) { setError('Escribe un saldo inicial válido.'); return; } setBusy(true); try { const response = await fetch(account ? `/api/household/accounts/${account.id}` : '/api/household/accounts', { method: account ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(account ? { name: form.name, type: form.type } : { household_id: householdId, name: form.name, type: form.type, initial_balance: initial }) }); const payload: unknown = await response.json().catch(() => null); if (!response.ok) { setError(readApiError(payload, 'No se pudo guardar la cuenta común.').message); return; } router.push('/dashboard/household/accounts'); router.refresh(); } catch { setError('No se pudo conectar con el servidor.'); } finally { setBusy(false); } };
+  return <form onSubmit={submit} className="space-y-5 rounded-2xl border bg-surface p-5 sm:p-6">{error && <p role="alert" className="rounded-xl border border-danger bg-danger-soft p-3 text-danger">{error}</p>}<label className="block text-sm font-medium">Nombre<input required maxLength={100} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full bg-surface px-3" /></label><label className="block text-sm font-medium">Tipo<select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="mt-1 w-full bg-surface px-3">{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>{!account && <><label className="block text-sm font-medium">Saldo inicial (MXN)<input required inputMode="decimal" value={form.initial_balance} onChange={(e) => setForm({ ...form, initial_balance: e.target.value })} className="mt-1 w-full bg-surface px-3 tabular-nums" /></label><p className="rounded-xl bg-info-soft p-3 text-sm text-info">Este saldo pertenecerá al fondo común y estará disponible para ambos.</p></>}<button disabled={busy} className="min-h-11 w-full rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover">{busy ? 'Guardando…' : account ? 'Guardar cambios' : 'Crear fondo común'}</button></form>;
+}

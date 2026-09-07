@@ -208,6 +208,18 @@ export async function connect() {
   return new PgConnection().connect();
 }
 
+async function accountsAcl(database) {
+  return database.query(`
+    select class.relacl::text as table_acl,
+           (select coalesce(jsonb_agg(jsonb_build_array(attribute.attname, attribute.attacl::text)
+                     order by attribute.attnum), '[]'::jsonb)::text
+              from pg_catalog.pg_attribute attribute
+             where attribute.attrelid = class.oid and attribute.attacl is not null) as column_acls
+      from pg_catalog.pg_class class
+     where class.oid = 'public.accounts'::regclass
+  `);
+}
+
 async function waitForLock(observer, predicate, label) {
   const deadline = Date.now() + 4000;
   while (Date.now() < deadline) {
@@ -229,6 +241,7 @@ export async function runConcurrencyTest() {
   const writer = await connect();
   const migration = await connect();
   const observer = await connect();
+  const aclBefore = await accountsAcl(admin);
 
   try {
   await admin.query(`
@@ -279,32 +292,29 @@ export async function runConcurrencyTest() {
     'later writer blocked by migration'
   );
   await migration.query(afterLockSql);
-  await migration.query('commit');
-  await blockedWriter;
-  await writer.query('commit');
-
-  const authenticated = await connect();
-  try {
-    await authenticated.query(`set role authenticated; select set_config('request.jwt.claim.sub', '${fixtureId}', false)`);
-    assert.equal((await authenticated.query(`select currency from public.accounts where id = '${accountId}'`))[0].currency, 'MXN');
-    const inserted = await authenticated.query(`
+  await migration.query(`set local role authenticated; select set_config('request.jwt.claim.sub', '${fixtureId}', true)`);
+  assert.equal((await migration.query(`select currency from public.accounts where id = '${accountId}'`))[0].currency, 'MXN');
+  const inserted = await migration.query(`
       insert into public.accounts(user_id, name, type, initial_balance)
       values (auth.uid(), 'Authenticated default', 'cash', 1)
       returning id::text, currency
-    `);
-    assert.equal(inserted[0].currency, 'MXN');
-    await assert.rejects(
-      authenticated.query(`insert into public.accounts(user_id, name, type, initial_balance, currency) values (auth.uid(), 'Forbidden', 'cash', 0, 'MXN')`),
-      (error) => error.code === '42501'
-    );
-    await assert.rejects(
-      authenticated.query(`update public.accounts set currency = 'USD' where id = '${accountId}'`),
-      (error) => error.code === '42501'
-    );
-    await authenticated.query('reset role');
-  } finally {
-    authenticated.close();
-  }
+  `);
+  assert.equal(inserted[0].currency, 'MXN');
+  await migration.query('savepoint forbidden_insert');
+  await assert.rejects(
+    migration.query(`insert into public.accounts(user_id, name, type, initial_balance, currency) values (auth.uid(), 'Forbidden', 'cash', 0, 'MXN')`),
+    (error) => error.code === '42501'
+  );
+  await migration.query('rollback to savepoint forbidden_insert');
+  await migration.query('savepoint forbidden_update');
+  await assert.rejects(
+    migration.query(`update public.accounts set currency = 'USD' where id = '${accountId}'`),
+    (error) => error.code === '42501'
+  );
+  await migration.query('rollback to savepoint forbidden_update');
+  await migration.query('reset role; rollback');
+  await blockedWriter;
+  await writer.query('commit');
 
   const privileges = (await admin.query(`
     select
@@ -313,6 +323,7 @@ export async function runConcurrencyTest() {
       has_column_privilege('authenticated', 'public.accounts', 'currency', 'UPDATE')::text as can_update
   `))[0];
   assert.deepEqual(privileges, { can_select: 'true', can_insert: 'false', can_update: 'false' });
+  assert.deepEqual(await accountsAcl(admin), aclBefore, 'The concurrency harness must restore the accounts ACL exactly.');
   console.log('MXN migration concurrency PASS: writer-first abort and migration-first exclusion use the real critical block.');
   } finally {
     for (const connection of [writer, migration]) {

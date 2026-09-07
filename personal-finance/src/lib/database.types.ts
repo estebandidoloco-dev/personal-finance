@@ -1320,6 +1320,10 @@ export type Database = {
         Args: { p_household_id: string; p_limit?: number }
         Returns: Json
       }
+      get_household_expense_detail: {
+        Args: { p_expense_id: string }
+        Returns: Json
+      }
       get_household_expenses_page: {
         Args: {
           p_household_id: string

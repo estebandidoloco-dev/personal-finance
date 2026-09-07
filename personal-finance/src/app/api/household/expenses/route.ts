@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildHouseholdPage, decodeHouseholdCursor, getHouseholdContext, mapHouseholdError, parseHouseholdBody, unauthorizedHousehold } from '@/lib/api/household';
 import { apiError, invalidRequest } from '@/lib/api/errors';
-import { householdPageQuerySchema, sharedExpenseCreateSchema } from '@/lib/validation/household';
+import {
+  householdActivityPageResponseSchema,
+  householdPageQuerySchema,
+  sharedExpenseCreateSchema,
+} from '@/lib/validation/household';
 
 export async function GET(request: NextRequest) {
   const { supabase, user } = await getHouseholdContext();
@@ -20,7 +24,11 @@ export async function GET(request: NextRequest) {
   if (error) return mapHouseholdError(error);
   const page = buildHouseholdPage(data, parsed.data.limit);
   if (!page) return apiError('invalid_household_response', 'La respuesta Household no cumple el contrato esperado.', 500);
-  return NextResponse.json(page);
+  const response = householdActivityPageResponseSchema.safeParse(page);
+  if (!response.success) {
+    return apiError('invalid_household_response', 'La respuesta Household no cumple el contrato esperado.', 500);
+  }
+  return NextResponse.json(response.data);
 }
 
 export async function POST(request: Request) {
