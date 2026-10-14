@@ -38,6 +38,8 @@ try {
   // 1. Unauthorized check
   assert.equal((await request('/api/household/settlements', { method: 'POST', body: '{}' })).status, 401);
   assert.equal((await request('/api/household/settlements/00000000-0000-0000-0000-000000000000/cancel', { method: 'POST', body: '{}' })).status, 401);
+  assert.equal((await request('/api/household/settlements/00000000-0000-0000-0000-000000000000/confirm', { method: 'POST', body: '{}' })).status, 401);
+  assert.equal((await request('/api/household/settlements/00000000-0000-0000-0000-000000000000/reject', { method: 'POST', body: '{}' })).status, 401);
 
   // 2. Setup household with A and B
   const householdResponse = await request('/api/household', {
@@ -57,17 +59,17 @@ try {
   }, b.cookie)).status, 200);
 
   // 3. Setup personal account for A and record personal shared expense: 100.00
-  const personalResponse = await request('/api/accounts', {
+  const personalAResponse = await request('/api/accounts', {
     method: 'POST', body: JSON.stringify({ name: 'Personal A checking', type: 'checking', initial_balance: '1000.00' }),
   }, a.cookie);
-  assert.equal(personalResponse.status, 201);
-  const personal = await personalResponse.json();
+  assert.equal(personalAResponse.status, 201);
+  const personalA = await personalAResponse.json();
 
   const expenseResponse = await request('/api/household/expenses', {
     method: 'POST', body: JSON.stringify({
       household_id: householdId,
       funding_source: 'personal_account',
-      source_account_id: personal.id,
+      source_account_id: personalA.id,
       amount: '100.00',
       date: '2026-09-06',
       description: 'Shared dinner',
@@ -80,13 +82,14 @@ try {
   }, a.cookie);
   assert.equal(expenseResponse.status, 201);
 
-  // 4. Verify initial balance: B owes A 50.00
+  // 4. Verify initial balance: B owes A 50.00, pending_settlement is null
   const balanceResponse = await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie);
   assert.equal(balanceResponse.status, 200);
   const initialBalance = await balanceResponse.json();
   assert.equal(initialBalance.amount, '50.00');
   assert.equal(initialBalance.owed_by_user_id, b.user.id);
   assert.equal(initialBalance.owed_to_user_id, a.user.id);
+  assert.equal(initialBalance.pending_settlement, null);
 
   // 5. Validation rejection on settlement creation
   const idempotencyKey1 = crypto.randomUUID();
@@ -96,6 +99,7 @@ try {
     date: '2026-09-06',
     notes: 'Pago parcial',
     idempotency_key: idempotencyKey1,
+    funding_source: 'cash',
   };
 
   for (const invalidAmount of [20.0, '0.00', '-0.00', '-20.00', '020.00', '1e2', '20.001']) {
@@ -104,6 +108,16 @@ try {
     }, b.cookie);
     assert.equal(res.status, 400, String(invalidAmount));
   }
+
+  // Reject personal_account without source_personal_account_id
+  assert.equal((await request('/api/household/settlements', {
+    method: 'POST', body: JSON.stringify({ ...validBody, funding_source: 'personal_account', idempotency_key: crypto.randomUUID() }),
+  }, b.cookie)).status, 400);
+
+  // Reject household_account without source_household_account_id
+  assert.equal((await request('/api/household/settlements', {
+    method: 'POST', body: JSON.stringify({ ...validBody, funding_source: 'household_account', idempotency_key: crypto.randomUUID() }),
+  }, b.cookie)).status, 400);
 
   // Reject extra keys
   assert.equal((await request('/api/household/settlements', {
@@ -116,7 +130,7 @@ try {
   }, b.cookie);
   assert.equal(exceedResponse.status, 400);
 
-  // 7. Successful partial settlement of 20.00 by B
+  // 7. Successful partial settlement of 20.00 by B (cash)
   const settleResponse1 = await request('/api/household/settlements', {
     method: 'POST', body: JSON.stringify(validBody),
   }, b.cookie);
@@ -126,6 +140,8 @@ try {
   assert.equal(settlement1.payer_user_id, b.user.id);
   assert.equal(settlement1.payee_user_id, a.user.id);
   assert.equal(settlement1.recorded_by_user_id, b.user.id);
+  assert.equal(settlement1.status, 'pending');
+  assert.equal(settlement1.funding_source, 'cash');
   assert.equal(settlement1.is_cancelled, false);
   assert.equal(settlement1.entry_type, 'settlement');
 
@@ -136,38 +152,160 @@ try {
   assert.equal(retryResponse.status, 201);
   assert.equal((await retryResponse.json()).id, settlement1.id);
 
-  // Same key with different amount returns 409 Conflict
-  const conflictResponse = await request('/api/household/settlements', {
-    method: 'POST', body: JSON.stringify({ ...validBody, amount: '25.00' }),
+  // Balance remains 50.00 while pending, with pending_settlement populated!
+  const balanceWhilePending = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
+  assert.equal(balanceWhilePending.amount, '50.00');
+  assert.equal(balanceWhilePending.pending_settlement?.id, settlement1.id);
+  assert.equal(balanceWhilePending.pending_settlement?.amount, '20.00');
+  assert.equal(balanceWhilePending.pending_settlement?.funding_source, 'cash');
+
+  // Permission check: Payer B CANNOT self-confirm
+  const selfConfirmResponse = await request(`/api/household/settlements/${settlement1.id}/confirm`, {
+    method: 'POST', body: '{}',
   }, b.cookie);
-  assert.equal(conflictResponse.status, 409);
+  assert.equal(selfConfirmResponse.status, 400);
 
-  // 8. Balance is now 30.00
-  const balanceAfterPart = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
-  assert.equal(balanceAfterPart.amount, '30.00');
-  assert.equal(balanceAfterPart.owed_by_user_id, b.user.id);
-  assert.equal(balanceAfterPart.owed_to_user_id, a.user.id);
+  // Payee A confirms the settlement
+  const confirmResponse = await request(`/api/household/settlements/${settlement1.id}/confirm`, {
+    method: 'POST', body: '{}',
+  }, a.cookie);
+  assert.equal(confirmResponse.status, 200);
+  const confirmedSettlement = await confirmResponse.json();
+  assert.equal(confirmedSettlement.status, 'confirmed');
 
-  // 9. Settle remaining 30.00
+  // Balance is now 30.00, pending_settlement is null
+  const balanceAfterConfirm = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
+  assert.equal(balanceAfterConfirm.amount, '30.00');
+  assert.equal(balanceAfterConfirm.owed_by_user_id, b.user.id);
+  assert.equal(balanceAfterConfirm.owed_to_user_id, a.user.id);
+  assert.equal(balanceAfterConfirm.pending_settlement, null);
+
+  // 8. Rejection workflow: B creates 10.00 in_kind settlement, A rejects it
   const idempotencyKey2 = crypto.randomUUID();
   const settleResponse2 = await request('/api/household/settlements', {
     method: 'POST', body: JSON.stringify({
       household_id: householdId,
-      amount: '30.00',
+      amount: '10.00',
       date: '2026-09-06',
-      notes: 'Liquidación total',
+      notes: 'Pago en especie',
       idempotency_key: idempotencyKey2,
+      funding_source: 'in_kind',
     }),
   }, b.cookie);
   assert.equal(settleResponse2.status, 201);
+  const settlement2 = await settleResponse2.json();
+  assert.equal(settlement2.status, 'pending');
+  assert.equal(settlement2.funding_source, 'in_kind');
 
-  // Balance is now 0.00
+  // Payer B cannot reject
+  assert.equal((await request(`/api/household/settlements/${settlement2.id}/reject`, { method: 'POST', body: '{}' }, b.cookie)).status, 400);
+
+  // Payee A rejects
+  const rejectResponse = await request(`/api/household/settlements/${settlement2.id}/reject`, {
+    method: 'POST', body: '{}',
+  }, a.cookie);
+  assert.equal(rejectResponse.status, 200);
+  assert.equal((await rejectResponse.json()).status, 'rejected');
+
+  // Balance remains 30.00 untouched
+  const balanceAfterReject = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
+  assert.equal(balanceAfterReject.amount, '30.00');
+  assert.equal(balanceAfterReject.pending_settlement, null);
+
+  // 9. Personal account funding source:
+  // Setup personal account for B with 1000.00
+  const personalBResponse = await request('/api/accounts', {
+    method: 'POST', body: JSON.stringify({ name: 'Personal B checking', type: 'checking', initial_balance: '1000.00' }),
+  }, b.cookie);
+  assert.equal(personalBResponse.status, 201);
+  const personalB = await personalBResponse.json();
+
+  const idempotencyKey3 = crypto.randomUUID();
+  const settleResponse3 = await request('/api/household/settlements', {
+    method: 'POST', body: JSON.stringify({
+      household_id: householdId,
+      amount: '15.00',
+      date: '2026-09-06',
+      notes: 'Transferencia bancaria personal',
+      idempotency_key: idempotencyKey3,
+      funding_source: 'personal_account',
+      source_personal_account_id: personalB.id,
+    }),
+  }, b.cookie);
+  assert.equal(settleResponse3.status, 201);
+  const settlement3 = await settleResponse3.json();
+  assert.equal(settlement3.status, 'pending');
+  assert.equal(settlement3.funding_source, 'personal_account');
+
+  // Check personal account balance of B is still 1000.00 while pending
+  const accountsBWhilePending = await (await request('/api/accounts', {}, b.cookie)).json();
+  const acctBWhilePending = accountsBWhilePending.find((acct) => acct.id === personalB.id);
+  assert.equal(acctBWhilePending.balance, '1000.00');
+
+  // Payee A confirms personal account settlement
+  const confirmPersonalResponse = await request(`/api/household/settlements/${settlement3.id}/confirm`, {
+    method: 'POST', body: '{}',
+  }, a.cookie);
+  assert.equal(confirmPersonalResponse.status, 200);
+  assert.equal((await confirmPersonalResponse.json()).status, 'confirmed');
+
+  // Check personal account balance of B is now 985.00
+  const accountsBAfterConfirm = await (await request('/api/accounts', {}, b.cookie)).json();
+  const acctBAfterConfirm = accountsBAfterConfirm.find((acct) => acct.id === personalB.id);
+  assert.equal(acctBAfterConfirm.balance, '985.00');
+
+  // Balance is now 15.00
+  const balanceAfterPersonal = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
+  assert.equal(balanceAfterPersonal.amount, '15.00');
+
+  // 10. Household account funding source:
+  // Setup household account with 500.00
+  const householdAccountResponse = await request('/api/household/accounts', {
+    method: 'POST', body: JSON.stringify({ household_id: householdId, name: 'Common Pool', type: 'checking', initial_balance: '500.00' }),
+  }, a.cookie);
+  assert.equal(householdAccountResponse.status, 201);
+  const householdAcct = await householdAccountResponse.json();
+
+  const idempotencyKey4 = crypto.randomUUID();
+  const settleResponse4 = await request('/api/household/settlements', {
+    method: 'POST', body: JSON.stringify({
+      household_id: householdId,
+      amount: '15.00',
+      date: '2026-09-06',
+      notes: 'Desde fondo común',
+      idempotency_key: idempotencyKey4,
+      funding_source: 'household_account',
+      source_household_account_id: householdAcct.id,
+    }),
+  }, b.cookie);
+  assert.equal(settleResponse4.status, 201);
+  const settlement4 = await settleResponse4.json();
+  assert.equal(settlement4.status, 'pending');
+  assert.equal(settlement4.funding_source, 'household_account');
+
+  // Check household account balance is still 500.00 while pending
+  const hhAcctsWhilePending = await (await request(`/api/household/accounts?household_id=${householdId}`, {}, a.cookie)).json();
+  const hhAcctWhilePending = hhAcctsWhilePending.find((acct) => acct.id === householdAcct.id);
+  assert.equal(hhAcctWhilePending.balance, '500.00');
+
+  // Payee A confirms household account settlement
+  const confirmHouseholdResponse = await request(`/api/household/settlements/${settlement4.id}/confirm`, {
+    method: 'POST', body: '{}',
+  }, a.cookie);
+  assert.equal(confirmHouseholdResponse.status, 200);
+
+  // Check household account balance is now 485.00
+  const hhAcctsAfterConfirm = await (await request(`/api/household/accounts?household_id=${householdId}`, {}, a.cookie)).json();
+  const hhAcctAfterConfirm = hhAcctsAfterConfirm.find((acct) => acct.id === householdAcct.id);
+  assert.equal(hhAcctAfterConfirm.balance, '485.00');
+
+  // Debt is now fully settled (0.00)
   const balanceZero = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
   assert.equal(balanceZero.amount, '0.00');
   assert.equal(balanceZero.owed_by_user_id, null);
   assert.equal(balanceZero.owed_to_user_id, null);
 
-  // 10. Attempting settlement when debt is 0.00 fails
+  // 11. Attempting settlement when debt is 0.00 fails
   const zeroDebtSettle = await request('/api/household/settlements', {
     method: 'POST', body: JSON.stringify({
       household_id: householdId,
@@ -177,39 +315,39 @@ try {
   }, b.cookie);
   assert.equal(zeroDebtSettle.status, 400);
 
-  // 11. Cancel first settlement (20.00)
-  // Invalid UUID returns 400
-  assert.equal((await request('/api/household/settlements/invalid-uuid/cancel', { method: 'POST', body: '{}' }, a.cookie)).status, 400);
-
-  const cancelResponse = await request(`/api/household/settlements/${settlement1.id}/cancel`, {
+  // 12. Cancel confirmed settlement (settlement3 - personal account 15.00)
+  const cancelResponse = await request(`/api/household/settlements/${settlement3.id}/cancel`, {
     method: 'POST', body: '{}',
-  }, a.cookie);
+  }, b.cookie);
   assert.equal(cancelResponse.status, 200);
   const cancelled = await cancelResponse.json();
-  assert.equal(cancelled.id, settlement1.id);
+  assert.equal(cancelled.id, settlement3.id);
+  assert.equal(cancelled.status, 'cancelled');
   assert.equal(cancelled.is_cancelled, true);
 
-  // Idempotent cancel replay returns 200
-  const cancelRetry = await request(`/api/household/settlements/${settlement1.id}/cancel`, {
-    method: 'POST', body: '{}',
-  }, a.cookie);
-  assert.equal(cancelRetry.status, 200);
-  assert.equal((await cancelRetry.json()).is_cancelled, true);
+  // Payer personal account balance restored to 1000.00!
+  const accountsBAfterCancel = await (await request('/api/accounts', {}, b.cookie)).json();
+  const acctBAfterCancel = accountsBAfterCancel.find((acct) => acct.id === personalB.id);
+  assert.equal(acctBAfterCancel.balance, '1000.00');
 
-  // Balance reflects cancellation (now B owes A 20.00)
+  // Balance restored to 15.00!
   const balanceRestored = await (await request(`/api/household/balance?household_id=${householdId}`, {}, a.cookie)).json();
-  assert.equal(balanceRestored.amount, '20.00');
+  assert.equal(balanceRestored.amount, '15.00');
   assert.equal(balanceRestored.owed_by_user_id, b.user.id);
   assert.equal(balanceRestored.owed_to_user_id, a.user.id);
 
-  // 12. History includes settlements
+  // 13. History includes settlements with status and funding_source
   const historyResponse = await request(`/api/household/history?household_id=${householdId}`, {}, a.cookie);
   assert.equal(historyResponse.status, 200);
   const history = await historyResponse.json();
   const settlementsInHistory = history.items.filter((item) => item.entry_type === 'settlement');
-  assert.equal(settlementsInHistory.length, 2);
+  assert.equal(settlementsInHistory.length, 4);
+  for (const s of settlementsInHistory) {
+    assert.ok(s.status);
+    assert.ok(s.funding_source);
+  }
 
-  console.log('P1.4 / P1.5 settlements API: PASS (auth, validation, idempotency, balance math, cancellation, history).');
+  console.log('P1.5 settlements API: PASS (funding sources, pending, confirm, reject, cancel, ledger balance restoration).');
 } finally {
   const admin = await connectPostgres();
   try {

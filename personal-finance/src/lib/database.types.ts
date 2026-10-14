@@ -577,43 +577,67 @@ export type Database = {
           amount: number
           cancelled_at: string | null
           cancelled_by_user_id: string | null
+          confirmed_at: string | null
+          confirmed_by_user_id: string | null
           created_at: string
           date: string
+          funding_source: string
+          household_account_transaction_id: string | null
           household_id: string
           id: string
           idempotency_key: string
           notes: string | null
           payee_user_id: string
           payer_user_id: string
+          personal_transaction_id: string | null
           recorded_by_user_id: string
+          rejected_at: string | null
+          rejected_by_user_id: string | null
+          status: string
         }
         Insert: {
           amount: number
           cancelled_at?: string | null
           cancelled_by_user_id?: string | null
+          confirmed_at?: string | null
+          confirmed_by_user_id?: string | null
           created_at?: string
           date: string
+          funding_source?: string
+          household_account_transaction_id?: string | null
           household_id: string
           id?: string
           idempotency_key: string
           notes?: string | null
           payee_user_id: string
           payer_user_id: string
+          personal_transaction_id?: string | null
           recorded_by_user_id: string
+          rejected_at?: string | null
+          rejected_by_user_id?: string | null
+          status?: string
         }
         Update: {
           amount?: number
           cancelled_at?: string | null
           cancelled_by_user_id?: string | null
+          confirmed_at?: string | null
+          confirmed_by_user_id?: string | null
           created_at?: string
           date?: string
+          funding_source?: string
+          household_account_transaction_id?: string | null
           household_id?: string
           id?: string
           idempotency_key?: string
           notes?: string | null
           payee_user_id?: string
           payer_user_id?: string
+          personal_transaction_id?: string | null
           recorded_by_user_id?: string
+          rejected_at?: string | null
+          rejected_by_user_id?: string | null
+          status?: string
         }
         Relationships: [
           {
@@ -1308,6 +1332,10 @@ export type Database = {
         Args: { p_settlement_id: string }
         Returns: Json
       }
+      confirm_household_settlement: {
+        Args: { p_settlement_id: string }
+        Returns: Json
+      }
       create_personal_account: {
         Args: {
           p_name: string
@@ -1474,9 +1502,12 @@ export type Database = {
         Args: {
           p_amount: string
           p_date: string
+          p_funding_source?: string
           p_household_id: string
           p_idempotency_key?: string
           p_notes?: string | null
+          p_source_household_account_id?: string | null
+          p_source_personal_account_id?: string | null
         }
         Returns: Json
       }
@@ -1547,6 +1578,10 @@ export type Database = {
       reject_household_invitation: {
         Args: { p_invitation_token: string }
         Returns: undefined
+      }
+      reject_household_settlement: {
+        Args: { p_settlement_id: string }
+        Returns: Json
       }
       revoke_household_invitation: {
         Args: { p_invitation_id: string }

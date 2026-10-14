@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 import {
   pageSchema,
   type HouseholdActivity,
@@ -9,9 +10,13 @@ import {
 } from '@/lib/contracts/household';
 import { readApiError } from '@/lib/api-error';
 import { formatFinancialDate } from '@/lib/dates/financial-date';
-import { getExpenseCategoryLabel, memberName } from '@/lib/household/presentation';
+import {
+  getExpenseCategoryLabel,
+  memberName,
+  settlementFundingSourceLabel,
+  transactionStatusLabel,
+} from '@/lib/household/presentation';
 import { MoneyAmount } from '@/components/dashboard/MoneyAmount';
-import { transactionStatusLabel } from '@/lib/household/presentation';
 import { AsyncState } from '@/components/shell/AsyncState';
 import { ErrorPanel } from '@/components/shell/ErrorPanel';
 import { EmptyState } from '@/components/shell/EmptyState';
@@ -106,6 +111,79 @@ export function HouseholdActivityList({
   const [cancellingBusy, setCancellingBusy] = useState(false);
   const [cancelError, setCancelError] = useState('');
 
+  const [rejectingSettlementId, setRejectingSettlementId] = useState<string | null>(null);
+  const [rejectingBusy, setRejectingBusy] = useState(false);
+  const [rejectError, setRejectError] = useState('');
+
+  const [confirmingSettlementId, setConfirmingSettlementId] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState('');
+
+  const handleConfirmSettlement = async (settlementId: string) => {
+    setConfirmingSettlementId(settlementId);
+    setConfirmError('');
+    try {
+      const response = await fetch(`/api/household/settlements/${settlementId}/confirm`, {
+        method: 'POST',
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(readApiError(payload, 'No se pudo confirmar la liquidación.').message);
+      }
+      setItems((current) =>
+        current.map((act) =>
+          act.entry_type === 'settlement' && act.id === settlementId
+            ? { ...act, status: 'confirmed' }
+            : act
+        )
+      );
+      window.dispatchEvent(
+        new CustomEvent('household-finance-mutated', {
+          detail: { householdId },
+        })
+      );
+    } catch (caught) {
+      setConfirmError(
+        caught instanceof Error ? caught.message : 'No se pudo confirmar la liquidación.'
+      );
+    } finally {
+      setConfirmingSettlementId(null);
+    }
+  };
+
+  const handleRejectSettlement = async () => {
+    if (!rejectingSettlementId || rejectingBusy) return;
+    setRejectingBusy(true);
+    setRejectError('');
+    try {
+      const response = await fetch(`/api/household/settlements/${rejectingSettlementId}/reject`, {
+        method: 'POST',
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(readApiError(payload, 'No se pudo rechazar la liquidación.').message);
+      }
+      setItems((current) =>
+        current.map((act) =>
+          act.entry_type === 'settlement' && act.id === rejectingSettlementId
+            ? { ...act, status: 'rejected' }
+            : act
+        )
+      );
+      window.dispatchEvent(
+        new CustomEvent('household-finance-mutated', {
+          detail: { householdId },
+        })
+      );
+      setRejectingSettlementId(null);
+    } catch (caught) {
+      setRejectError(
+        caught instanceof Error ? caught.message : 'No se pudo rechazar la liquidación.'
+      );
+    } finally {
+      setRejectingBusy(false);
+    }
+  };
+
   const handleCancelSettlement = async () => {
     if (!cancellingSettlementId || cancellingBusy) return;
     setCancellingBusy(true);
@@ -121,7 +199,7 @@ export function HouseholdActivityList({
       setItems((current) =>
         current.map((act) =>
           act.entry_type === 'settlement' && act.id === cancellingSettlementId
-            ? { ...act, is_cancelled: true }
+            ? { ...act, is_cancelled: true, status: 'cancelled' }
             : act
         )
       );
@@ -175,6 +253,11 @@ export function HouseholdActivityList({
                 ? `${payer} te liquidó`
                 : `${payer} liquidó a ${payee}`;
 
+            const isCancelled = item.is_cancelled || item.status === 'cancelled';
+            const isPending = !isCancelled && item.status === 'pending';
+            const isConfirmed = !isCancelled && item.status === 'confirmed';
+            const isRejected = !isCancelled && item.status === 'rejected';
+
             return (
               <li
                 key={`${item.entry_type}:${item.id}`}
@@ -184,37 +267,95 @@ export function HouseholdActivityList({
                   <div className="min-w-0">
                     <p className="font-semibold break-words">{settlementLabel}</p>
                     <p className="text-text-muted mt-1 text-sm">
-                      {formatFinancialDate(item.date)} · {item.is_cancelled ? 'Cancelada' : 'Liquidación'}
+                      {formatFinancialDate(item.date)} · Liquidación
                     </p>
                   </div>
                   <MoneyAmount amount={item.amount} className="text-base font-bold" />
                 </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <span
-                    className={`rounded-full px-2 py-1 ${
-                      item.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-success-soft text-success'
-                    }`}
-                  >
-                    {item.is_cancelled ? 'Liquidación cancelada' : 'Liquidación completada'}
+
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded-full border border-border/60 bg-surface-subtle px-2 py-0.5 text-text-muted font-medium">
+                    {settlementFundingSourceLabel(item.funding_source)}
                   </span>
-                  {!item.is_cancelled && !readOnly && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      className="text-danger hover:bg-danger-soft hover:text-danger h-7 px-2 text-xs font-semibold"
-                      onClick={() => {
-                        setCancelError('');
-                        setCancellingSettlementId(item.id);
-                      }}
-                    >
-                      Cancelar liquidación
-                    </Button>
+                  {isPending && (
+                    <span className="rounded-full border border-warning/30 bg-warning-soft px-2 py-0.5 text-warning font-medium">
+                      Pendiente de confirmación
+                    </span>
+                  )}
+                  {isConfirmed && (
+                    <span className="rounded-full border border-success/30 bg-success-soft px-2 py-0.5 text-success font-medium">
+                      Confirmada
+                    </span>
+                  )}
+                  {isRejected && (
+                    <span className="rounded-full border border-danger/30 bg-danger-soft px-2 py-0.5 text-danger font-medium">
+                      Rechazada
+                    </span>
+                  )}
+                  {isCancelled && (
+                    <span className="rounded-full border border-border/40 bg-surface-subtle px-2 py-0.5 text-text-muted font-medium">
+                      Cancelada
+                    </span>
                   )}
                 </div>
+
                 {item.notes && (
                   <p className="text-text-muted mt-2 text-xs break-words">
                     {item.notes}
+                  </p>
+                )}
+
+                {!item.is_cancelled && !readOnly && isPending && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {youArePayee && (
+                      <>
+                        <Button
+                          type="button"
+                          size="xs"
+                          disabled={confirmingSettlementId === item.id}
+                          onClick={() => void handleConfirmSettlement(item.id)}
+                          className="h-7 px-2.5 text-xs font-semibold"
+                        >
+                          {confirmingSettlementId === item.id ? (
+                            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                          ) : null}
+                          <span>Confirmar de recibido</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          disabled={confirmingSettlementId === item.id}
+                          onClick={() => {
+                            setRejectError('');
+                            setRejectingSettlementId(item.id);
+                          }}
+                          className="text-danger hover:bg-danger-soft hover:text-danger h-7 px-2.5 text-xs font-semibold"
+                        >
+                          Rechazar
+                        </Button>
+                      </>
+                    )}
+                    {youArePayer && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        className="text-danger hover:bg-danger-soft hover:text-danger h-7 px-2 text-xs font-semibold"
+                        onClick={() => {
+                          setCancelError('');
+                          setCancellingSettlementId(item.id);
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {confirmError && confirmingSettlementId === item.id && (
+                  <p role="alert" className="text-danger mt-2 text-xs">
+                    {confirmError}
                   </p>
                 )}
               </li>
@@ -322,6 +463,21 @@ export function HouseholdActivityList({
           if (!cancellingBusy) {
             setCancellingSettlementId(null);
             setCancelError('');
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(rejectingSettlementId)}
+        title="¿Rechazar esta liquidación?"
+        description="Indicarás que no has recibido este dinero. La deuda permanecerá pendiente en el balance entre ustedes."
+        confirmLabel="Rechazar liquidación"
+        busy={rejectingBusy}
+        error={rejectError}
+        onConfirm={() => void handleRejectSettlement()}
+        onClose={() => {
+          if (!rejectingBusy) {
+            setRejectingSettlementId(null);
+            setRejectError('');
           }
         }}
       />

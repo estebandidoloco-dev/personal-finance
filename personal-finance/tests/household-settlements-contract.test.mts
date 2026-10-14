@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 // @ts-expect-error -- TypeScript disallows .ts extensions unless enabled globally.
-import { householdActivityItemSchema, householdActivityPageResponseSchema, householdActivityResponseSchema, householdSettlementCreateSchema, householdSettlementResponseSchema } from '../src/lib/validation/household.ts';
+import { householdActivityItemSchema, householdActivityPageResponseSchema, householdActivityResponseSchema, householdBalanceResponseSchema, householdPendingSettlementSchema, householdSettlementCreateSchema, householdSettlementResponseSchema, settlementFundingSourceSchema, settlementStatusSchema } from '../src/lib/validation/household.ts';
 
 const householdId = '80000000-0000-4000-8000-000000000001';
 const userA = '80000000-0000-4000-8000-000000000002';
@@ -237,3 +237,248 @@ test('householdActivityPageResponseSchema validates pages with mixed activities'
 
   assert.equal(householdActivityPageResponseSchema.safeParse(page).success, true);
 });
+
+test('householdSettlementCreateSchema enforces funding source requirements', () => {
+  const base = {
+    household_id: householdId,
+    amount: '100.00',
+    date: '2026-09-06',
+  };
+  const personalAcct = '80000000-0000-4000-8000-000000000007';
+  const householdAcct = '80000000-0000-4000-8000-000000000008';
+
+  // 1. personal_account requires source_personal_account_id
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'personal_account',
+      source_personal_account_id: personalAcct,
+    }).success,
+    true
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'personal_account',
+    }).success,
+    false,
+    'personal_account without source_personal_account_id must fail'
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'personal_account',
+      source_personal_account_id: personalAcct,
+      source_household_account_id: householdAcct,
+    }).success,
+    false,
+    'personal_account with source_household_account_id must fail'
+  );
+
+  // 2. household_account requires source_household_account_id
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'household_account',
+      source_household_account_id: householdAcct,
+    }).success,
+    true
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'household_account',
+    }).success,
+    false,
+    'household_account without source_household_account_id must fail'
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'household_account',
+      source_household_account_id: householdAcct,
+      source_personal_account_id: personalAcct,
+    }).success,
+    false,
+    'household_account with source_personal_account_id must fail'
+  );
+
+  // 3. cash requires no accounts linked
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'cash',
+    }).success,
+    true
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'cash',
+      source_personal_account_id: personalAcct,
+    }).success,
+    false,
+    'cash with personal account must fail'
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'cash',
+      source_household_account_id: householdAcct,
+    }).success,
+    false,
+    'cash with household account must fail'
+  );
+
+  // 4. in_kind requires no accounts linked
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'in_kind',
+    }).success,
+    true
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'in_kind',
+      source_personal_account_id: personalAcct,
+    }).success,
+    false,
+    'in_kind with personal account must fail'
+  );
+
+  // 5. Invalid funding source enum must fail
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({
+      ...base,
+      funding_source: 'crypto',
+    }).success,
+    false,
+    'Invalid funding source must fail'
+  );
+});
+
+test('householdSettlementResponseSchema validates all status variants and funding sources', () => {
+  const base = {
+    id: settlementId,
+    entry_type: 'settlement' as const,
+    household_id: householdId,
+    payer_user_id: userA,
+    payee_user_id: userB,
+    recorded_by_user_id: userA,
+    amount: '75.00',
+    date: '2026-09-06',
+    notes: null,
+    is_cancelled: false,
+    created_at: '2026-09-06T15:30:00.000Z',
+  };
+
+  // Valid statuses
+  for (const status of ['pending', 'confirmed', 'rejected', 'cancelled'] as const) {
+    assert.equal(
+      householdSettlementResponseSchema.safeParse({
+        ...base,
+        status,
+        is_cancelled: status === 'cancelled',
+      }).success,
+      true,
+      `Status ${status} must be valid`
+    );
+  }
+
+  // Valid funding sources
+  for (const funding_source of ['personal_account', 'household_account', 'cash', 'in_kind'] as const) {
+    assert.equal(
+      householdSettlementResponseSchema.safeParse({
+        ...base,
+        funding_source,
+      }).success,
+      true,
+      `Funding source ${funding_source} must be valid`
+    );
+  }
+
+  // Invalid status
+  assert.equal(
+    householdSettlementResponseSchema.safeParse({ ...base, status: 'approved' }).success,
+    false
+  );
+
+  // Invalid funding source
+  assert.equal(
+    householdSettlementResponseSchema.safeParse({ ...base, funding_source: 'credit_card' }).success,
+    false
+  );
+});
+
+test('householdBalanceResponseSchema accepts and validates pending_settlement contract', () => {
+  const validBalanceWithoutPending = {
+    household_id: householdId,
+    currency: 'MXN' as const,
+    positions: [
+      { user_id: userA, amount: '50.00' },
+      { user_id: userB, amount: '-50.00' },
+    ],
+    owed_by_user_id: userB,
+    owed_to_user_id: userA,
+    amount: '50.00',
+    pending_settlement: null,
+  };
+
+  assert.equal(householdBalanceResponseSchema.safeParse(validBalanceWithoutPending).success, true);
+
+  const pendingSettlement = {
+    id: settlementId,
+    payer_user_id: userB,
+    payee_user_id: userA,
+    amount: '20.00',
+    funding_source: 'personal_account' as const,
+    date: '2026-09-06',
+    notes: 'Pago parcial',
+    created_at: '2026-09-06T12:00:00.000Z',
+  };
+
+  const validBalanceWithPending = {
+    ...validBalanceWithoutPending,
+    pending_settlement: pendingSettlement,
+  };
+
+  assert.equal(householdBalanceResponseSchema.safeParse(validBalanceWithPending).success, true);
+  assert.equal(householdPendingSettlementSchema.safeParse(pendingSettlement).success, true);
+
+  // Rejects if pending_settlement has identical payer and payee
+  assert.equal(
+    householdPendingSettlementSchema.safeParse({ ...pendingSettlement, payee_user_id: userB }).success,
+    false
+  );
+
+  // Rejects invalid amount in pending_settlement
+  assert.equal(
+    householdPendingSettlementSchema.safeParse({ ...pendingSettlement, amount: '0.00' }).success,
+    false
+  );
+  assert.equal(
+    householdPendingSettlementSchema.safeParse({ ...pendingSettlement, amount: '-10.00' }).success,
+    false
+  );
+
+  // Rejects invalid date in pending_settlement
+  assert.equal(
+    householdPendingSettlementSchema.safeParse({ ...pendingSettlement, date: '2026-02-30' }).success,
+    false
+  );
+});
+
+test('settlementFundingSourceSchema and settlementStatusSchema validate correctly', () => {
+  for (const source of ['personal_account', 'household_account', 'cash', 'in_kind']) {
+    assert.equal(settlementFundingSourceSchema.safeParse(source).success, true, source);
+  }
+  assert.equal(settlementFundingSourceSchema.safeParse('crypto').success, false);
+
+  for (const status of ['pending', 'confirmed', 'rejected', 'cancelled']) {
+    assert.equal(settlementStatusSchema.safeParse(status).success, true, status);
+  }
+  assert.equal(settlementStatusSchema.safeParse('completed').success, false);
+});
+

@@ -14,6 +14,9 @@ export async function POST(request: Request) {
     p_date: input.date,
     p_notes: input.notes ?? null,
     p_idempotency_key: input.idempotency_key ?? crypto.randomUUID(),
+    p_funding_source: input.funding_source,
+    p_source_personal_account_id: input.source_personal_account_id ?? null,
+    p_source_household_account_id: input.source_household_account_id ?? null,
   });
   if (error) return mapHouseholdError(error);
   const response = householdSettlementResponseSchema.safeParse(data);

@@ -1,11 +1,14 @@
 import { z } from 'zod';
 import {
-  exactAggregateSignedMoneySchema,
   exactSignedMoneySchema,
   householdActivityPageResponseSchema,
   householdActivityResponseSchema,
+  householdBalanceResponseSchema,
   householdExpenseDetailResponseSchema,
+  householdPendingSettlementSchema,
   householdSettlementResponseSchema,
+  settlementFundingSourceSchema,
+  settlementStatusSchema,
 } from '@/lib/validation/household';
 
 const uuid = z.string().uuid();
@@ -63,6 +66,8 @@ export const householdAccountSchema = z
 export const splitSchema = z.object({ user_id: uuid, amount: exactSignedMoneySchema }).strict();
 export const expenseDetailSchema = householdExpenseDetailResponseSchema;
 export const settlementSchema = householdSettlementResponseSchema;
+export const pendingSettlementSchema = householdPendingSettlementSchema;
+export const balanceSchema = householdBalanceResponseSchema;
 export const activitySchema = householdActivityResponseSchema;
 export const pageSchema = householdActivityPageResponseSchema;
 export const archivedHouseholdSchema = z
@@ -86,13 +91,9 @@ export type HouseholdMember = z.infer<typeof memberSchema>;
 export type HouseholdAccount = z.infer<typeof householdAccountSchema>;
 export type HouseholdActivity = z.infer<typeof activitySchema>;
 export type HouseholdSettlement = z.infer<typeof settlementSchema>;
+export type HouseholdPendingSettlement = z.infer<typeof pendingSettlementSchema>;
+export type SettlementFundingSource = z.infer<typeof settlementFundingSourceSchema>;
+export type SettlementStatus = z.infer<typeof settlementStatusSchema>;
 export type HouseholdExpenseDetail = z.infer<typeof expenseDetailSchema>;
 export type ArchivedHousehold = z.infer<typeof archivedHouseholdSchema>;
-export type HouseholdBalance = {
-  household_id: string;
-  currency: 'MXN';
-  positions: Array<{ user_id: string; amount: z.infer<typeof exactAggregateSignedMoneySchema> }>;
-  owed_by_user_id: string | null;
-  owed_to_user_id: string | null;
-  amount: string;
-};
+export type HouseholdBalance = z.infer<typeof balanceSchema>;

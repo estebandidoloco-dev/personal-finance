@@ -52,6 +52,32 @@ export function getExpenseCategoryLabel(expense: { category?: { name: string } |
   return expense.category?.name ?? 'Sin categoría';
 }
 
+export function settlementFundingSourceLabel(source: string) {
+  return (
+    (
+      {
+        cash: 'Efectivo',
+        in_kind: 'En especie',
+        personal_account: 'Cuenta personal',
+        household_account: 'Fondo común',
+      } as Record<string, string>
+    )[source] ?? source
+  );
+}
+
+export function settlementStatusLabel(status: string) {
+  return (
+    (
+      {
+        pending: 'Pendiente de confirmación',
+        confirmed: 'Confirmada',
+        rejected: 'Rechazada',
+        cancelled: 'Cancelada',
+      } as Record<string, string>
+    )[status] ?? status
+  );
+}
+
 export function archivedBalancePresentation(
   memberCount: number,
   balance: { amount: string; owed_by_user_id: string | null },

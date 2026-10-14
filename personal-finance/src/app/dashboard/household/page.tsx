@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, UsersRound } from 'lucide-react';
+import { CheckCircle2, Loader2, UsersRound } from 'lucide-react';
 import { householdAccountSchema, memberSchema } from '@/lib/contracts/household';
 import { householdBalanceResponseSchema } from '@/lib/validation/household';
 import { useHousehold } from '@/components/household/HouseholdContext';
@@ -13,8 +13,10 @@ import { AsyncState } from '@/components/shell/AsyncState';
 import { ErrorPanel } from '@/components/shell/ErrorPanel';
 import { EmptyState } from '@/components/shell/EmptyState';
 import { ContextBadge } from '@/components/shell/ContextBadge';
+import { ConfirmDialog } from '@/components/shell/ConfirmDialog';
 import { MoneyAmount } from '@/components/dashboard/MoneyAmount';
-import { memberName } from '@/lib/household/presentation';
+import { memberName, settlementFundingSourceLabel } from '@/lib/household/presentation';
+import { readApiError } from '@/lib/api-error';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { HouseholdSettlementDialog } from '@/components/household/HouseholdSettlementDialog';
@@ -98,6 +100,10 @@ function ActiveDashboard({
 }) {
   const [accepted, setAccepted] = useState(false);
   const [settlementOpen, setSettlementOpen] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   useEffect(() => {
     if (sessionStorage.getItem(ACCEPTED_FLASH_KEY) === '1') {
       sessionStorage.removeItem(ACCEPTED_FLASH_KEY);
@@ -151,6 +157,94 @@ function ActiveDashboard({
     : balance.owed_by_user_id === userId
       ? `Este importe proviene de gastos que ${otherName} pagó con dinero personal por ambos.`
       : 'Este importe proviene de gastos que pagaste con dinero personal por ambos.';
+  const handleConfirmPending = async (settlementId: string) => {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      const response = await fetch(`/api/household/settlements/${settlementId}/confirm`, {
+        method: 'POST',
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(readApiError(payload, 'No se pudo confirmar la liquidación.').message);
+      }
+      window.dispatchEvent(
+        new CustomEvent('household-finance-mutated', {
+          detail: { householdId },
+        })
+      );
+      resource.retry();
+    } catch (caught) {
+      setActionError(
+        caught instanceof Error ? caught.message : 'No se pudo confirmar la liquidación.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRejectPending = async (settlementId: string) => {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      const response = await fetch(`/api/household/settlements/${settlementId}/reject`, {
+        method: 'POST',
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(readApiError(payload, 'No se pudo rechazar la liquidación.').message);
+      }
+      setRejectDialogOpen(false);
+      window.dispatchEvent(
+        new CustomEvent('household-finance-mutated', {
+          detail: { householdId },
+        })
+      );
+      resource.retry();
+    } catch (caught) {
+      setActionError(
+        caught instanceof Error ? caught.message : 'No se pudo rechazar la liquidación.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleCancelPending = async (settlementId: string) => {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      const response = await fetch(`/api/household/settlements/${settlementId}/cancel`, {
+        method: 'POST',
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(readApiError(payload, 'No se pudo cancelar el envío de liquidación.').message);
+      }
+      setCancelDialogOpen(false);
+      window.dispatchEvent(
+        new CustomEvent('household-finance-mutated', {
+          detail: { householdId },
+        })
+      );
+      resource.retry();
+    } catch (caught) {
+      setActionError(
+        caught instanceof Error ? caught.message : 'No se pudo cancelar el envío de liquidación.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const pending = balance.pending_settlement;
+  const pendingPayer = members.find((member) => member.user_id === pending?.payer_user_id);
+  const pendingPayee = members.find((member) => member.user_id === pending?.payee_user_id);
+  const pendingPayerName = memberName(pendingPayer, userId);
+  const pendingPayeeName = memberName(pendingPayee, userId);
+  const isPendingPayee = pending?.payee_user_id === userId;
+  const isPendingPayer = pending?.payer_user_id === userId;
+
   return (
     <main id="household-summary" className="w-full min-w-0 space-y-7">
       {accepted && (
@@ -201,7 +295,89 @@ function ActiveDashboard({
         <p className="text-text-muted mt-2 max-w-2xl text-xs">
           No es un saldo bancario. Solo refleja gastos personales adelantados.
         </p>
-        {!even && (
+
+        {pending && isPendingPayee && (
+          <div className="mt-4 rounded-2xl border border-primary/40 bg-primary-soft/40 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1 min-w-0">
+                <p className="font-semibold text-text break-words">
+                  📥 {pendingPayerName} te envió una liquidación de ${pending.amount} ({settlementFundingSourceLabel(pending.funding_source)}). ¿Confirmas haber recibido este dinero?
+                </p>
+                {pending.notes && (
+                  <p className="text-text-muted text-xs italic break-words">
+                    Nota: {pending.notes}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={actionBusy}
+                  onClick={() => void handleConfirmPending(pending.id)}
+                >
+                  {actionBusy ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : null}
+                  <span>Confirmar recibido</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={actionBusy}
+                  onClick={() => {
+                    setActionError('');
+                    setRejectDialogOpen(true);
+                  }}
+                  className="text-danger hover:bg-danger-soft hover:text-danger"
+                >
+                  Rechazar
+                </Button>
+              </div>
+            </div>
+            {actionError && (
+              <p role="alert" className="mt-2 text-xs text-danger font-medium">
+                {actionError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {pending && isPendingPayer && (
+          <div className="mt-4 rounded-2xl border border-warning/40 bg-warning-soft/40 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1 min-w-0">
+                <p className="font-semibold text-text break-words">
+                  ⏳ Enviaste una liquidación de ${pending.amount} a {pendingPayeeName}. Pendiente de que confirme de recibido.
+                </p>
+                <p className="text-text-muted text-xs">
+                  Origen: {settlementFundingSourceLabel(pending.funding_source)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={actionBusy}
+                onClick={() => {
+                  setActionError('');
+                  setCancelDialogOpen(true);
+                }}
+                className="text-danger hover:bg-danger-soft hover:text-danger shrink-0"
+              >
+                Cancelar envío
+              </Button>
+            </div>
+            {actionError && (
+              <p role="alert" className="mt-2 text-xs text-danger font-medium">
+                {actionError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {!pending && !even && (
           <div className="mt-4">
             <Button
               type="button"
@@ -221,10 +397,45 @@ function ActiveDashboard({
           payerName={balance.owed_by_user_id === userId ? 'Tú' : otherName}
           payeeName={balance.owed_by_user_id === userId ? otherName : 'Tú'}
           isPayerYou={balance.owed_by_user_id === userId}
+          accounts={accounts}
           onSuccess={() => {
             resource.retry();
           }}
         />
+      )}
+      {pending && (
+        <>
+          <ConfirmDialog
+            open={rejectDialogOpen}
+            title="¿Rechazar esta liquidación?"
+            description="Indicarás que no has recibido este dinero. La deuda permanecerá pendiente en el balance."
+            confirmLabel="Rechazar liquidación"
+            busy={actionBusy}
+            error={actionError}
+            onConfirm={() => void handleRejectPending(pending.id)}
+            onClose={() => {
+              if (!actionBusy) {
+                setRejectDialogOpen(false);
+                setActionError('');
+              }
+            }}
+          />
+          <ConfirmDialog
+            open={cancelDialogOpen}
+            title="¿Cancelar el envío de liquidación?"
+            description="Se cancelará el registro de liquidación pendiente y cualquier movimiento vinculado."
+            confirmLabel="Cancelar envío"
+            busy={actionBusy}
+            error={actionError}
+            onConfirm={() => void handleCancelPending(pending.id)}
+            onClose={() => {
+              if (!actionBusy) {
+                setCancelDialogOpen(false);
+                setActionError('');
+              }
+            }}
+          />
+        </>
       )}
       <section className="min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-3">

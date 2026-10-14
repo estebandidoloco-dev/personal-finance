@@ -26,6 +26,48 @@ function exactMoneyToCents(value: string) {
   return negative ? -cents : cents;
 }
 
+function isCalendarDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
+}
+
+export const financialDateSchema = z.string().refine(isCalendarDate, 'La fecha debe ser un DATE válido YYYY-MM-DD');
+
+export const settlementFundingSourceSchema = z.enum([
+  'personal_account',
+  'household_account',
+  'cash',
+  'in_kind',
+]);
+
+export const settlementStatusSchema = z.enum([
+  'pending',
+  'confirmed',
+  'rejected',
+  'cancelled',
+]);
+
+export const householdPendingSettlementSchema = z.object({
+  id: householdIdSchema,
+  payer_user_id: householdIdSchema,
+  payee_user_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  funding_source: settlementFundingSourceSchema,
+  date: financialDateSchema,
+  notes: z.string().nullable(),
+  created_at: z.string().datetime({ offset: true }),
+}).strict().superRefine((value, context) => {
+  if (value.payer_user_id === value.payee_user_id) {
+    context.addIssue({ code: 'custom', message: 'El pagador y el beneficiario deben ser distintos', path: ['payee_user_id'] });
+  }
+});
+
 export const householdBalanceResponseSchema = z.object({
   household_id: z.string().uuid(),
   currency: z.literal('MXN'),
@@ -36,6 +78,7 @@ export const householdBalanceResponseSchema = z.object({
   owed_by_user_id: z.string().uuid().nullable(),
   owed_to_user_id: z.string().uuid().nullable(),
   amount: exactAggregateUnsignedMoneySchema,
+  pending_settlement: householdPendingSettlementSchema.nullable().default(null),
 }).strict().superRefine((value, context) => {
   if (!aggregateUnsignedMoneyPattern.test(value.amount)
       || value.positions.some((position) => !aggregateSignedMoneyPattern.test(position.amount)
@@ -97,18 +140,6 @@ export const householdBalanceResponseSchema = z.object({
   }
 });
 
-function isCalendarDate(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return false;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
-}
-
-export const financialDateSchema = z.string().refine(isCalendarDate, 'La fecha debe ser un DATE válido YYYY-MM-DD');
 export const householdCursorPayloadSchema = z.object({
   version: z.literal(1),
   date: financialDateSchema,
@@ -192,7 +223,57 @@ export const householdSettlementCreateSchema = z.object({
   date: financialDateSchema,
   notes: z.string().trim().max(500).nullable().optional(),
   idempotency_key: householdIdSchema.optional(),
-}).strict();
+  funding_source: settlementFundingSourceSchema.default('cash'),
+  source_personal_account_id: householdIdSchema.nullable().optional(),
+  source_household_account_id: householdIdSchema.nullable().optional(),
+}).strict().superRefine((value, context) => {
+  if (value.funding_source === 'personal_account') {
+    if (!value.source_personal_account_id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Se requiere una cuenta personal para este origen de fondos',
+        path: ['source_personal_account_id'],
+      });
+    }
+    if (value.source_household_account_id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'No se debe especificar cuenta de hogar para origen personal',
+        path: ['source_household_account_id'],
+      });
+    }
+  } else if (value.funding_source === 'household_account') {
+    if (!value.source_household_account_id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Se requiere una cuenta de hogar para este origen de fondos',
+        path: ['source_household_account_id'],
+      });
+    }
+    if (value.source_personal_account_id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'No se debe especificar cuenta personal para origen de hogar',
+        path: ['source_personal_account_id'],
+      });
+    }
+  } else {
+    if (value.source_personal_account_id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'No se debe especificar cuenta personal para efectivo o en especie',
+        path: ['source_personal_account_id'],
+      });
+    }
+    if (value.source_household_account_id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'No se debe especificar cuenta de hogar para efectivo o en especie',
+        path: ['source_household_account_id'],
+      });
+    }
+  }
+});
 
 export const householdSettlementResponseSchema = z.object({
   id: householdIdSchema,
@@ -204,6 +285,8 @@ export const householdSettlementResponseSchema = z.object({
   amount: exactPositiveMoneySchema,
   date: financialDateSchema,
   notes: z.string().nullable(),
+  status: settlementStatusSchema.default('pending'),
+  funding_source: settlementFundingSourceSchema.default('cash'),
   is_cancelled: z.boolean(),
   created_at: z.string().datetime({ offset: true }),
 }).strict().superRefine((value, context) => {
@@ -350,6 +433,8 @@ export const householdActivityResponseSchema = z.discriminatedUnion('entry_type'
     amount: exactPositiveMoneySchema,
     date: financialDateSchema,
     notes: z.string().nullable(),
+    status: settlementStatusSchema.default('pending'),
+    funding_source: settlementFundingSourceSchema.default('cash'),
     is_cancelled: z.boolean(),
     created_at: z.string().datetime({ offset: true }),
   }).strict(),
