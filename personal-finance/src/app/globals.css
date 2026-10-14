@@ -1,4 +1,7 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:where([data-scheme="dark"], [data-scheme="dark"] *));
 
 :root {
   color-scheme: light;
@@ -28,7 +31,8 @@
   --focus-ring: #718c7b;
 }
 
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+:root[data-scheme='dark'] {
   color-scheme: dark;
   --background: #1a1d1b;
   --surface: #232724;
@@ -58,40 +62,104 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-foreground: var(--foreground, var(--text));
   --color-surface: var(--surface);
   --color-surface-subtle: var(--surface-subtle);
   --color-surface-raised: var(--surface-raised);
+  --color-card: var(--card, var(--surface));
+  --color-card-foreground: var(--card-foreground, var(--text));
+  --color-popover: var(--popover, var(--surface-raised));
+  --color-popover-foreground: var(--popover-foreground, var(--text));
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-text-subtle: var(--text-subtle);
   --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground, var(--on-primary));
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-on-primary: var(--on-primary);
+  --color-secondary: var(--secondary, var(--surface-subtle));
+  --color-secondary-foreground: var(--secondary-foreground, var(--text));
+  --color-muted: var(--muted, var(--surface-subtle));
+  --color-muted-foreground: var(--muted-foreground, var(--text-muted));
+  --color-accent: var(--accent, var(--surface-subtle));
+  --color-accent-foreground: var(--accent-foreground, var(--text));
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-destructive: var(--destructive, var(--danger));
+  --color-destructive-foreground: var(--destructive-foreground, #ffffff);
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
   --color-income: var(--income);
   --color-expense: var(--expense);
   --color-focus-ring: var(--focus-ring);
+  --color-ring: var(--ring, var(--focus-ring));
+  --color-chart-1: var(--chart-1, #3b82f6);
+  --color-chart-2: var(--chart-2, #10b981);
+  --color-chart-3: var(--chart-3, #f59e0b);
+  --color-chart-4: var(--chart-4, #ef4444);
+  --color-chart-5: var(--chart-5, #8b5cf6);
+  --color-sidebar: var(--sidebar, var(--surface));
+  --color-sidebar-foreground: var(--sidebar-foreground, var(--text));
+  --color-sidebar-border: var(--sidebar-border, var(--border));
+  --color-sidebar-primary: var(--sidebar-primary, var(--primary));
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground, var(--primary-foreground));
+  --color-sidebar-accent: var(--sidebar-accent, var(--surface-subtle));
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground, var(--text));
+
+  --radius-xs: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 0.5);
+  --radius-sm: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 0.75);
+  --radius-md: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1));
+  --radius-lg: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 1.25);
+  --radius-xl: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 1.5);
+  --radius-2xl: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 2);
+  --radius-3xl: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 2.5);
 }
 
 * { border-color: var(--border); }
-html { background: var(--background); }
+html {
+  background: var(--background);
+  font-size: calc(100% * var(--font-scale, 1));
+}
 body {
   min-height: 100vh;
-  background: var(--background);
-  color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--page-background, var(--background));
+  color: var(--foreground, var(--text));
+  font-family: var(--font-body, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   font-variant-numeric: tabular-nums;
 }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading, inherit);
+  font-weight: var(--heading-weight, 600);
+  letter-spacing: var(--heading-tracking, normal);
+  text-transform: var(--heading-transform, none);
+}
+
+@utility heading {
+  font-family: var(--font-heading, inherit);
+  font-weight: var(--heading-weight, 600);
+  letter-spacing: var(--heading-tracking, normal);
+  text-transform: var(--heading-transform, none);
+}
+
+@utility surface {
+  background-color: var(--surface-fill, var(--surface));
+  -webkit-backdrop-filter: var(--surface-backdrop, none);
+  backdrop-filter: var(--surface-backdrop, none);
+  color: var(--card-foreground, var(--text));
+  border-radius: calc(var(--radius, 0.5rem) * var(--surface-radius-scale, 1) * 2);
+  border-width: var(--surface-border-width, 1px);
+  border-color: var(--surface-border-color, var(--border));
+  box-shadow: var(--surface-shadow, none);
+}
+
 button, a, input, select, textarea {
   transition-duration: 140ms;
   transition-property: color, background-color, border-color, box-shadow, opacity, transform;
@@ -99,7 +167,7 @@ button, a, input, select, textarea {
 input, select, textarea {
   min-height: 44px;
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
 }
@@ -119,6 +187,16 @@ input:focus, select:focus, textarea:focus {
   to { opacity: 1; transform: translateY(0); }
 }
 .surface-enter { animation: surface-enter 160ms ease-out both; }
+
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

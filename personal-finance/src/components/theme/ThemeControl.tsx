@@ -17,6 +17,7 @@ function applyPreference(preference: ThemePreference) {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.scheme = resolved;
   document.documentElement.dataset.themePreference = preference;
 }
 
@@ -42,6 +43,11 @@ function subscribe(onChange: () => void) {
 
 function setPreference(preference: ThemePreference) {
   window.localStorage.setItem(THEME_STORAGE_KEY, preference);
+  if (preference === 'system') {
+    window.localStorage.removeItem('personal-finance-theme-mode');
+  } else {
+    window.localStorage.setItem('personal-finance-theme-mode', preference === 'dark' ? 'DARK' : 'LIGHT');
+  }
   applyPreference(preference);
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
@@ -57,11 +63,15 @@ export function ThemeControl() {
   return (
     <fieldset>
       <legend className="text-sm font-semibold">Apariencia</legend>
-      <div className="bg-surface-subtle mt-2 grid grid-cols-3 gap-1 rounded-xl p-1">
+      <div className="bg-surface-subtle mt-2 grid grid-cols-3 gap-1 rounded-[var(--control-radius)] p-1 border border-border/50">
         {choices.map(({ value, label, icon: Icon }) => (
           <label
             key={value}
-            className={`flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg px-2 text-xs font-medium ${preference === value ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-muted hover:text-text'}`}
+            className={`flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-[calc(var(--control-radius)*0.75)] px-2 text-xs font-semibold transition-all ${
+              preference === value
+                ? 'bg-card text-foreground shadow-xs border border-border/70 text-primary'
+                : 'text-muted-foreground hover:text-foreground hover:bg-card/40'
+            }`}
           >
             <input
               type="radio"

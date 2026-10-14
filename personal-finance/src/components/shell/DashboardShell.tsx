@@ -10,7 +10,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <Link href="/dashboard" className="min-w-0 truncate text-lg font-bold tracking-tight">
             Personal Finance
           </Link>
-          <UserIdentity />
+          <div className="flex items-center gap-2">
+            <UserIdentity />
+          </div>
         </div>
       </header>
       <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-7 lg:py-8">

@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, UserRound } from 'lucide-react';
+import { ChevronDownIcon as ChevronDown, UserIcon as UserRound } from '@/components/ui/icons';
 import { useSupabase } from '@/components/providers/supabase-provider';
 import { LogoutButton } from '@/components/ui/LogoutButton';
 import { ThemeControl } from '@/components/theme/ThemeControl';
+import { ThemeEditorTrigger } from '@/components/theme/ThemeEditorTrigger';
+import { Card } from '@/components/ui/card';
 
 type Identity = { name: string; email: string; initials: string };
 
@@ -64,9 +66,9 @@ export function UserIdentity() {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-11 max-w-full items-center gap-2 rounded-xl border bg-surface p-1.5 pr-2 text-left hover:bg-surface-subtle"
+        className="flex min-h-11 max-w-full items-center gap-2 rounded-[var(--control-radius)] border bg-surface p-1.5 pr-2 text-left hover:bg-surface-subtle"
       >
-        <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary-soft text-sm font-bold text-primary">
+        <span className="grid size-11 shrink-0 place-items-center rounded-[calc(var(--control-radius)*0.75)] bg-primary-soft text-sm font-bold text-primary">
           {identity?.initials ?? <UserRound aria-hidden="true" className="size-5" />}
         </span>
         <span className="hidden min-w-0 sm:block">
@@ -81,21 +83,31 @@ export function UserIdentity() {
         <span className="sr-only">Abrir menú de cuenta de {label}</span>
       </button>
       {open && (
-        <div
+        <Card
           role="dialog"
           aria-label="Cuenta de usuario"
-          className="surface-enter absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border bg-surface-raised p-4 shadow-lg"
+          className="surface-enter absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] p-4 shadow-xl border border-border bg-card text-foreground"
         >
-          <p className="text-xs font-medium text-text-subtle">Sesión iniciada como</p>
-          <p className="mt-1 break-words font-semibold">{label}</p>
-          {identity?.email && (
-            <p className="break-all text-sm text-text-muted">
-              {identity.email}
-            </p>
-          )}
-          <div id="appearance" className="my-4 border-y py-4"><ThemeControl /></div>
-          <LogoutButton />
-        </div>
+          <div className="pb-3 border-b border-border">
+            <p className="text-xs font-medium text-muted-foreground">Sesión iniciada como</p>
+            <p className="mt-1 break-words text-sm font-semibold text-foreground">{label}</p>
+            {identity?.email && (
+              <p className="break-all text-xs text-muted-foreground mt-0.5">
+                {identity.email}
+              </p>
+            )}
+          </div>
+          <div id="appearance" className="py-3 border-b border-border">
+            <ThemeControl />
+            <ThemeEditorTrigger
+              className="mt-3 w-full justify-center"
+              onClick={() => setOpen(false)}
+            />
+          </div>
+          <div className="pt-3">
+            <LogoutButton />
+          </div>
+        </Card>
       )}
     </div>
   );

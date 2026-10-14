@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/components/providers/supabase-provider';
+import { Button } from '@/components/ui/button';
 
 export function LogoutButton() {
   const { supabase } = useSupabase();
@@ -32,14 +33,15 @@ export function LogoutButton() {
 
   return (
     <div>
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={handleLogout}
         disabled={loading}
-        className="min-h-11 w-full rounded-xl border border-danger bg-danger-soft px-4 text-left text-sm font-medium text-danger hover:opacity-80 disabled:opacity-50"
+        className="min-h-11 w-full justify-start border-danger/40 bg-danger-soft text-danger hover:bg-danger-soft/80"
       >
         {loading ? 'Cerrando sesión...' : 'Cerrar sesión'}
-      </button>
+      </Button>
       {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );

@@ -15,6 +15,8 @@ import { EmptyState } from '@/components/shell/EmptyState';
 import { ContextBadge } from '@/components/shell/ContextBadge';
 import { MoneyAmount } from '@/components/dashboard/MoneyAmount';
 import { memberName } from '@/lib/household/presentation';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 const ACCEPTED_FLASH_KEY = 'household_invitation_accepted';
 
@@ -25,7 +27,7 @@ export default function HouseholdDashboardPage() {
       <main className="w-full min-w-0 space-y-6">
         <header>
           <ContextBadge household />
-          <h1 className="mt-2 text-3xl font-bold break-words">Finanzas en pareja</h1>
+          <h1 className="heading mt-2 text-3xl font-bold break-words">Finanzas en pareja</h1>
           <p className="text-text-muted mt-2">
             Tus cuentas personales permanecen privadas y separadas.
           </p>
@@ -36,18 +38,16 @@ export default function HouseholdDashboardPage() {
             description="Puedes consultar tus espacios anteriores o crear uno nuevo."
             action={
               <div className="flex flex-col justify-center gap-2 sm:flex-row">
-                <Link
-                  href="/dashboard/household/archive"
-                  className="bg-surface min-h-11 rounded-xl border px-4 py-2.5"
-                >
-                  Ver espacios anteriores
-                </Link>
-                <Link
-                  href="/dashboard/household/setup"
-                  className="bg-primary text-on-primary min-h-11 rounded-xl px-4 py-2.5 font-semibold"
-                >
-                  Crear nuevo espacio
-                </Link>
+                <Button asChild variant="outline">
+                  <Link href="/dashboard/household/archive">
+                    Ver espacios anteriores
+                  </Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/dashboard/household/setup">
+                    Crear nuevo espacio
+                  </Link>
+                </Button>
               </div>
             }
           />
@@ -56,12 +56,11 @@ export default function HouseholdDashboardPage() {
             title="Crea tu espacio En pareja"
             description="Invita a una persona para gestionar gastos y fondos comunes sin mezclar cuentas personales."
             action={
-              <Link
-                href="/dashboard/household/setup"
-                className="bg-primary text-on-primary inline-flex min-h-11 items-center rounded-xl px-4 font-semibold"
-              >
-                Comenzar
-              </Link>
+              <Button asChild>
+                <Link href="/dashboard/household/setup">
+                  Comenzar
+                </Link>
+              </Button>
             }
           />
         )}
@@ -75,12 +74,11 @@ export default function HouseholdDashboardPage() {
           title="Falta aceptar la invitación"
           description="El resumen financiero se habilitará cuando haya exactamente dos miembros."
           action={
-            <Link
-              href="/dashboard/household/setup"
-              className="bg-primary text-on-primary inline-flex min-h-11 items-center rounded-xl px-4 font-semibold"
-            >
-              Continuar configuración
-            </Link>
+            <Button asChild>
+              <Link href="/dashboard/household/setup">
+                Continuar configuración
+              </Link>
+            </Button>
           }
         />
       </main>
@@ -148,15 +146,15 @@ function ActiveDashboard({
           <div
             role="status"
             aria-live="polite"
-            className="surface-enter bg-success text-on-primary fixed top-20 right-4 z-40 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg"
+            className="surface-enter bg-success text-on-primary fixed top-20 right-4 z-40 rounded-[var(--control-radius)] px-4 py-3 text-sm font-semibold shadow-lg"
           >
             Invitación aceptada
           </div>
-          <section className="surface-enter border-success bg-success-soft text-text rounded-2xl border p-5">
+          <Card className="surface-enter border-success/40 bg-success-soft text-text p-5">
             <div className="flex items-start gap-3">
               <CheckCircle2 aria-hidden="true" className="text-success mt-0.5 size-6 shrink-0" />
               <div className="min-w-0">
-                <h2 className="text-lg font-bold break-words">Listo, ya comparten «{name}».</h2>
+                <h2 className="heading text-lg font-bold break-words">Listo, ya comparten «{name}».</h2>
                 <p className="mt-2 text-sm">
                   {members.map((member) => memberName(member, userId)).join(' y ')}
                 </p>
@@ -168,7 +166,7 @@ function ActiveDashboard({
                 </a>
               </div>
             </div>
-          </section>
+          </Card>
         </>
       )}
       <p className="text-text-muted text-sm lg:hidden">
@@ -178,9 +176,9 @@ function ActiveDashboard({
       <p className="text-text-muted hidden text-sm lg:block">
         {members.map((member) => memberName(member, userId)).join(' · ')}
       </p>
-      <section className="bg-info-soft w-full min-w-0 rounded-2xl border p-5">
+      <Card className="bg-info-soft/30 border-info/30 w-full min-w-0 p-5">
         <p className="text-text-muted text-sm font-semibold">Balance entre ustedes</p>
-        <h2 className="mt-2 flex items-center gap-2 text-2xl font-bold break-words">
+        <h2 className="heading mt-2 flex items-center gap-2 text-2xl font-bold break-words">
           {even && <CheckCircle2 aria-hidden="true" className="text-success size-6" />}
           {balanceText}
         </h2>
@@ -191,36 +189,37 @@ function ActiveDashboard({
         <p className="text-text-muted mt-2 max-w-2xl text-xs">
           No es un saldo bancario. Solo refleja gastos personales adelantados.
         </p>
-      </section>
+      </Card>
       <section className="min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-bold">Cuentas comunes</h2>
-          <Link
-            href="/dashboard/household/accounts"
-            className="text-primary min-h-11 py-2.5 text-sm hover:underline"
-          >
-            Ver todas
-          </Link>
+          <h2 className="heading text-xl font-bold">Cuentas comunes</h2>
+          <Button asChild variant="link" size="sm">
+            <Link href="/dashboard/household/accounts">
+              Ver todas
+            </Link>
+          </Button>
         </div>
         {accounts.length ? (
           <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
             {accounts.map((account) => (
-              <li key={account.id} className="bg-surface w-full min-w-0 rounded-2xl border p-4">
-                <div className="flex min-w-0 gap-3">
+              <li key={account.id} className="min-w-0">
+                <Card className="w-full min-w-0 p-4">
                   <div className="flex min-w-0 gap-3">
-                    <span className="bg-surface-subtle text-info flex size-10 shrink-0 items-center justify-center rounded-xl">
-                      <UsersRound aria-hidden="true" className="size-5" />
-                    </span>
-                    <div className="min-w-0">
-                      <h3 className="font-semibold break-words">{account.name}</h3>
-                      <p className="text-text-muted text-sm">Fondo común</p>
+                    <div className="flex min-w-0 gap-3">
+                      <span className="bg-surface-subtle text-info flex size-10 shrink-0 items-center justify-center rounded-[var(--control-radius)]">
+                        <UsersRound aria-hidden="true" className="size-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="heading font-semibold break-words">{account.name}</h3>
+                        <p className="text-text-muted text-sm">Fondo común</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <MoneyAmount
-                  amount={account.balance}
-                  className="mt-3 inline-block text-lg font-bold"
-                />
+                  <MoneyAmount
+                    amount={account.balance}
+                    className="mt-3 inline-block text-lg font-bold"
+                  />
+                </Card>
               </li>
             ))}
           </ul>
@@ -228,22 +227,23 @@ function ActiveDashboard({
           <EmptyState
             title="No hay cuentas comunes"
             action={
-              <Link href="/dashboard/household/accounts/new" className="text-primary">
-                Crear fondo común
-              </Link>
+              <Button asChild variant="link">
+                <Link href="/dashboard/household/accounts/new">
+                  Crear fondo común
+                </Link>
+              </Button>
             }
           />
         )}
       </section>
       <section className="min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-bold">Últimos gastos</h2>
-          <Link
-            href="/dashboard/household/expenses"
-            className="text-primary min-h-11 py-2.5 text-sm hover:underline"
-          >
-            Ver todos
-          </Link>
+          <h2 className="heading text-xl font-bold">Últimos gastos</h2>
+          <Button asChild variant="link" size="sm">
+            <Link href="/dashboard/household/expenses">
+              Ver todos
+            </Link>
+          </Button>
         </div>
         <HouseholdActivityList
           householdId={householdId}

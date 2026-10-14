@@ -1,0 +1,103 @@
+'use client';
+
+import type { ComponentType, SVGProps, ReactNode } from 'react';
+import {
+  Archive as ArchiveIcon,
+  BarChart3 as BarChartIcon,
+  Bell as BellIcon,
+  Briefcase as BriefcaseIcon,
+  Calendar as CalendarIcon,
+  Check as CheckIcon,
+  CheckCircle as CheckCircleIcon,
+  ChevronDown as ChevronDownIcon,
+  ChevronRight as ChevronRightIcon,
+  Code as CodeIcon,
+  CreditCard as CreditCardIcon,
+  Eye as EyeIcon,
+  FileText as FileTextIcon,
+  FileUp as FileUpIcon,
+  Folder as FolderIcon,
+  FolderTree as FolderTreeIcon,
+  History as HistoryIcon,
+  Home as HomeIcon,
+  Landmark as LandmarkIcon,
+  LogOut as LogOutIcon,
+  Mail as MailIcon,
+  Menu as MenuIcon,
+  MessageSquare as MessageSquareIcon,
+  MoreHorizontal as MoreHorizontalIcon,
+  Palette as PaletteIcon,
+  PanelLeft as SidebarToggleIcon,
+  Pencil as PencilIcon,
+  Plus as PlusIcon,
+  ReceiptText as ReceiptTextIcon,
+  Settings as SettingsIcon,
+  Share2 as Share2Icon,
+  Shield as ShieldIcon,
+  Sparkles as SparklesIcon,
+  Tags as TagsIcon,
+  UserRound as UserIcon,
+  UsersRound as UsersIcon,
+  Video as VideoIcon,
+  Wallet as WalletIcon,
+  WalletCards as WalletCardsIcon,
+  Wrench as WrenchIcon,
+  X as CloseIcon,
+  AlertCircle as AlertCircleIcon,
+} from 'lucide-react';
+
+export type IconLibrary = 'lucide';
+export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
+
+export function IconLibraryProvider({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
+export function useIconLibrary(): IconLibrary {
+  return 'lucide';
+}
+
+export {
+  ArchiveIcon,
+  BarChartIcon,
+  BellIcon,
+  BriefcaseIcon,
+  CalendarIcon,
+  CheckIcon,
+  CheckCircleIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  CodeIcon,
+  CreditCardIcon,
+  EyeIcon,
+  FileTextIcon,
+  FileUpIcon,
+  FolderIcon,
+  FolderTreeIcon,
+  HistoryIcon,
+  HomeIcon,
+  LandmarkIcon,
+  LogOutIcon,
+  MailIcon,
+  MenuIcon,
+  MessageSquareIcon,
+  MoreHorizontalIcon,
+  PaletteIcon,
+  PencilIcon,
+  PlusIcon,
+  ReceiptTextIcon,
+  SettingsIcon,
+  Share2Icon,
+  ShieldIcon,
+  SidebarToggleIcon,
+  SparklesIcon,
+  TagsIcon,
+  UserIcon,
+  UsersIcon,
+  VideoIcon,
+  WalletIcon,
+  WalletCardsIcon,
+  WrenchIcon,
+  AlertCircleIcon,
+};

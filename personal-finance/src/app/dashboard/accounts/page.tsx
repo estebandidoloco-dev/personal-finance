@@ -14,6 +14,8 @@ import { ErrorPanel } from '@/components/shell/ErrorPanel';
 import { EmptyState } from '@/components/shell/EmptyState';
 import { ConfirmDialog } from '@/components/shell/ConfirmDialog';
 import { readApiError } from '@/lib/api-error';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 type Account = ReturnType<typeof personalAccountResponseSchema.parse>;
 
@@ -69,20 +71,19 @@ export default function AccountsPage() {
       <header className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <ContextBadge />
-          <h1 className="mt-2 text-3xl font-bold">Cuentas personales</h1>
+          <h1 className="heading mt-2 text-3xl font-bold">Cuentas personales</h1>
         </div>
-        <Link
-          href="/dashboard/accounts/new"
-          className="bg-primary text-on-primary hover:bg-primary-hover min-h-11 w-full rounded-xl px-4 py-2.5 text-center font-semibold sm:w-auto"
-        >
-          Crear cuenta
-        </Link>
+        <Button asChild className="w-full sm:w-auto">
+          <Link href="/dashboard/accounts/new">
+            Crear cuenta
+          </Link>
+        </Button>
       </header>
       {success && (
         <div
           role="status"
           aria-live="polite"
-          className="surface-enter bg-success text-on-primary fixed top-20 right-4 z-40 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg"
+          className="surface-enter bg-success text-on-primary fixed top-20 right-4 z-40 rounded-[var(--control-radius)] px-4 py-3 text-sm font-semibold shadow-lg"
         >
           {success}
         </div>
@@ -90,7 +91,7 @@ export default function AccountsPage() {
       {actionError && (
         <div
           role="alert"
-          className="border-danger bg-danger-soft text-danger rounded-xl border p-4"
+          className="border-danger bg-danger-soft text-danger rounded-[var(--control-radius)] border p-4"
         >
           <p className="font-semibold">No pudimos completar la acción</p>
           <p className="mt-1 text-sm">{actionError}</p>
@@ -104,55 +105,57 @@ export default function AccountsPage() {
       {resource.status === 'success' && (
         <ul className="grid min-w-0 gap-4 md:grid-cols-2">
           {resource.data.map((account) => (
-            <li key={account.id} className="bg-surface relative min-w-0 rounded-2xl border p-5">
-              <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="flex min-w-0 gap-3">
-                  <span className="bg-surface-subtle text-text-muted grid size-10 shrink-0 place-items-center rounded-xl">
-                    <Landmark aria-hidden="true" className="size-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="font-semibold break-words">{account.name}</h2>
-                    <p className="text-text-muted text-sm break-words">
-                      {accountTypeLabel(account.type)}
-                      {account.institution ? ` · ${account.institution}` : ''}
-                    </p>
+            <li key={account.id} className="min-w-0">
+              <Card className="relative min-w-0 p-5">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="flex min-w-0 gap-3">
+                    <span className="bg-surface-subtle text-text-muted grid size-10 shrink-0 place-items-center rounded-[var(--control-radius)]">
+                      <Landmark aria-hidden="true" className="size-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="heading font-semibold break-words">{account.name}</h2>
+                      <p className="text-text-muted text-sm break-words">
+                        {accountTypeLabel(account.type)}
+                        {account.institution ? ` · ${account.institution}` : ''}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Acciones para ${account.name}`}
-                  aria-expanded={menuId === account.id}
-                  onClick={() => setMenuId((value) => (value === account.id ? null : account.id))}
-                  className="hover:bg-surface-subtle grid size-11 shrink-0 place-items-center rounded-xl"
-                >
-                  <MoreHorizontal aria-hidden="true" className="size-5" />
-                </button>
-              </div>
-              <MoneyAmount
-                amount={account.balance}
-                className={`mt-5 block text-2xl font-bold break-words ${account.balance.startsWith('-') ? 'text-expense' : 'text-text'}`}
-              />
-              {menuId === account.id && (
-                <div className="surface-enter bg-surface-raised absolute top-16 right-5 z-20 min-w-44 rounded-xl border p-1 shadow-lg">
-                  <Link
-                    href={`/dashboard/accounts/${account.id}`}
-                    onClick={() => setMenuId(null)}
-                    className="hover:bg-surface-subtle flex min-h-11 items-center rounded-lg px-3 text-sm"
-                  >
-                    Editar
-                  </Link>
                   <button
                     type="button"
-                    onClick={() => {
-                      setMenuId(null);
-                      setDeleting(account);
-                    }}
-                    className="text-danger hover:bg-danger-soft min-h-11 w-full rounded-lg px-3 text-left text-sm"
+                    aria-label={`Acciones para ${account.name}`}
+                    aria-expanded={menuId === account.id}
+                    onClick={() => setMenuId((value) => (value === account.id ? null : account.id))}
+                    className="hover:bg-surface-subtle grid size-11 shrink-0 place-items-center rounded-[var(--control-radius)]"
                   >
-                    Eliminar cuenta
+                    <MoreHorizontal aria-hidden="true" className="size-5" />
                   </button>
                 </div>
-              )}
+                <MoneyAmount
+                  amount={account.balance}
+                  className={`mt-5 block text-2xl font-bold break-words ${account.balance.startsWith('-') ? 'text-expense' : 'text-text'}`}
+                />
+                {menuId === account.id && (
+                  <Card className="surface-enter absolute top-16 right-5 z-20 min-w-44 p-1 shadow-lg">
+                    <Link
+                      href={`/dashboard/accounts/${account.id}`}
+                      onClick={() => setMenuId(null)}
+                      className="hover:bg-surface-subtle flex min-h-11 items-center rounded-[calc(var(--control-radius)*0.75)] px-3 text-sm"
+                    >
+                      Editar
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuId(null);
+                        setDeleting(account);
+                      }}
+                      className="text-danger hover:bg-danger-soft min-h-11 w-full rounded-[calc(var(--control-radius)*0.75)] px-3 text-left text-sm"
+                    >
+                      Eliminar cuenta
+                    </button>
+                  </Card>
+                )}
+              </Card>
             </li>
           ))}
         </ul>
