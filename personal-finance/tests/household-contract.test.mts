@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 // Node's native type-stripping loader requires the extension; the app uses bundler resolution.
 // @ts-expect-error -- TypeScript disallows .ts extensions unless enabled globally.
-import { exactAggregateSignedMoneySchema, exactPositiveMoneySchema, exactSignedMoneySchema, financialDateSchema, householdAccountCreateSchema, householdBalanceResponseSchema, householdContributionCreateSchema, householdContributionResponseSchema, householdInvitationCreateSchema, sharedExpenseCreateSchema } from '../src/lib/validation/household.ts';
+import { exactAggregateSignedMoneySchema, exactPositiveMoneySchema, exactSignedMoneySchema, financialDateSchema, householdAccountCreateSchema, householdActivityItemSchema, householdActivityResponseSchema, householdBalanceResponseSchema, householdContributionCreateSchema, householdContributionResponseSchema, householdInvitationCreateSchema, householdSettlementCreateSchema, householdSettlementResponseSchema, sharedExpenseCreateSchema } from '../src/lib/validation/household.ts';
+
 
 const userA = '64000000-0000-4000-8000-000000000001';
 const userB = '64000000-0000-4000-8000-000000000002';
@@ -262,3 +263,122 @@ test('invitation email is normalized without account discovery', () => {
   });
   assert.equal(parsed.invited_email, 'partner@example.test');
 });
+
+test('settlement validation schema accepts valid and rejects invalid amounts/dates', () => {
+  const validInput = {
+    household_id: baseExpense.household_id,
+    amount: '50.00',
+    date: '2026-09-05',
+    notes: 'Pago de parte de gastos',
+    idempotency_key: '64500000-0000-4000-8000-000000000001',
+  };
+
+  assert.equal(householdSettlementCreateSchema.safeParse(validInput).success, true);
+
+  // Minimal input without optional notes and idempotency_key
+  assert.equal(householdSettlementCreateSchema.safeParse({
+    household_id: validInput.household_id,
+    amount: '123.45',
+    date: '2026-09-05',
+  }).success, true);
+
+  // Nullable notes
+  assert.equal(householdSettlementCreateSchema.safeParse({
+    ...validInput,
+    notes: null,
+  }).success, true);
+
+  // Rejects invalid amounts
+  for (const invalidAmount of ['0.00', '-0.00', '-50.00', '50', 50, '50.0', '50.000', '1e2']) {
+    assert.equal(
+      householdSettlementCreateSchema.safeParse({ ...validInput, amount: invalidAmount }).success,
+      false,
+      `Should reject invalid amount: ${invalidAmount}`
+    );
+  }
+
+  // Rejects invalid dates
+  for (const invalidDate of ['2026-02-31', '2026-13-01', '2026-00-10', '2026/09/05', 'invalid']) {
+    assert.equal(
+      householdSettlementCreateSchema.safeParse({ ...validInput, date: invalidDate }).success,
+      false,
+      `Should reject invalid date: ${invalidDate}`
+    );
+  }
+
+  // Rejects notes exceeding 500 characters
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({ ...validInput, notes: 'x'.repeat(501) }).success,
+    false,
+    'Should reject notes > 500 chars'
+  );
+
+  // Rejects extra / forbidden fields (strict schema)
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({ ...validInput, payer_user_id: userA }).success,
+    false,
+    'Should reject payer_user_id in create input'
+  );
+  assert.equal(
+    householdSettlementCreateSchema.safeParse({ ...validInput, currency: 'MXN' }).success,
+    false,
+    'Should reject currency in create input'
+  );
+});
+
+test('settlement response schema and activity item schema validate settlement entry type', () => {
+  const validResponse = {
+    id: '64600000-0000-4000-8000-000000000001',
+    entry_type: 'settlement' as const,
+    household_id: baseExpense.household_id,
+    payer_user_id: userA,
+    payee_user_id: userB,
+    recorded_by_user_id: userA,
+    amount: '50.00',
+    date: '2026-09-05',
+    notes: 'Reembolso cena',
+    is_cancelled: false,
+    created_at: '2026-09-05T12:00:00.000Z',
+  };
+
+  assert.equal(householdSettlementResponseSchema.safeParse(validResponse).success, true);
+  assert.equal(householdActivityItemSchema.safeParse(validResponse).success, true);
+  assert.equal(householdActivityResponseSchema.safeParse(validResponse).success, true);
+
+  // Cancelled settlement is also valid in response schema and activity schema
+  const cancelledResponse = {
+    ...validResponse,
+    is_cancelled: true,
+  };
+  assert.equal(householdSettlementResponseSchema.safeParse(cancelledResponse).success, true);
+  assert.equal(householdActivityItemSchema.safeParse(cancelledResponse).success, true);
+
+  // Rejects when payer and payee are identical
+  const sameUser = {
+    ...validResponse,
+    payee_user_id: userA,
+  };
+  assert.equal(householdSettlementResponseSchema.safeParse(sameUser).success, false);
+  assert.equal(householdActivityItemSchema.safeParse(sameUser).success, false);
+
+  // Rejects invalid amount format in settlement
+  assert.equal(
+    householdSettlementResponseSchema.safeParse({ ...validResponse, amount: '50' }).success,
+    false
+  );
+  assert.equal(
+    householdActivityItemSchema.safeParse({ ...validResponse, amount: '50' }).success,
+    false
+  );
+
+  // Strict: rejects unknown keys
+  assert.equal(
+    householdSettlementResponseSchema.safeParse({ ...validResponse, extra_key: 'foo' }).success,
+    false
+  );
+  assert.equal(
+    householdActivityItemSchema.safeParse({ ...validResponse, extra_key: 'foo' }).success,
+    false
+  );
+});
+

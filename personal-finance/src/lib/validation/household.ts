@@ -186,6 +186,33 @@ export const householdContributionResponseSchema = z.object({
   }
 });
 
+export const householdSettlementCreateSchema = z.object({
+  household_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  date: financialDateSchema,
+  notes: z.string().trim().max(500).nullable().optional(),
+  idempotency_key: householdIdSchema.optional(),
+}).strict();
+
+export const householdSettlementResponseSchema = z.object({
+  id: householdIdSchema,
+  entry_type: z.literal('settlement').default('settlement'),
+  household_id: householdIdSchema,
+  payer_user_id: householdIdSchema,
+  payee_user_id: householdIdSchema,
+  recorded_by_user_id: householdIdSchema,
+  amount: exactPositiveMoneySchema,
+  date: financialDateSchema,
+  notes: z.string().nullable(),
+  is_cancelled: z.boolean(),
+  created_at: z.string().datetime({ offset: true }),
+}).strict().superRefine((value, context) => {
+  if (value.payer_user_id === value.payee_user_id) {
+    context.addIssue({ code: 'custom', message: 'El pagador y el beneficiario deben ser distintos', path: ['payee_user_id'] });
+  }
+});
+
+
 export const householdIncomeCreateSchema = z.object({
   account_id: householdIdSchema,
   amount: exactPositiveMoneySchema,
@@ -313,7 +340,26 @@ export const householdActivityResponseSchema = z.discriminatedUnion('entry_type'
     split_mode: z.enum(['equal', 'custom']),
     splits: z.array(splitSchema).length(2),
   }).strict(),
+  z.object({
+    id: householdIdSchema,
+    entry_type: z.literal('settlement'),
+    household_id: householdIdSchema,
+    payer_user_id: householdIdSchema,
+    payee_user_id: householdIdSchema,
+    recorded_by_user_id: householdIdSchema,
+    amount: exactPositiveMoneySchema,
+    date: financialDateSchema,
+    notes: z.string().nullable(),
+    is_cancelled: z.boolean(),
+    created_at: z.string().datetime({ offset: true }),
+  }).strict(),
 ]).superRefine((value, context) => {
+  if (value.entry_type === 'settlement') {
+    if (value.payer_user_id === value.payee_user_id) {
+      context.addIssue({ code: 'custom', message: 'El pagador y el beneficiario deben ser distintos', path: ['payee_user_id'] });
+    }
+    return;
+  }
   if (value.entry_type !== 'shared_expense') return;
   if ((value.category === null) !== (value.category_id === null)
       || (value.category !== null && value.category.id !== value.category_id)) {
@@ -331,6 +377,8 @@ export const householdActivityResponseSchema = z.discriminatedUnion('entry_type'
     context.addIssue({ code: 'custom', message: 'Los splits deben sumar exactamente el importe', path: ['splits'] });
   }
 });
+
+export const householdActivityItemSchema = householdActivityResponseSchema;
 
 export const householdActivityPageResponseSchema = z.object({
   items: z.array(householdActivityResponseSchema),

@@ -15,6 +15,8 @@ import { transactionStatusLabel } from '@/lib/household/presentation';
 import { AsyncState } from '@/components/shell/AsyncState';
 import { ErrorPanel } from '@/components/shell/ErrorPanel';
 import { EmptyState } from '@/components/shell/EmptyState';
+import { ConfirmDialog } from '@/components/shell/ConfirmDialog';
+import { Button } from '@/components/ui/button';
 
 type Endpoint = 'expenses' | 'history';
 
@@ -99,6 +101,44 @@ export function HouseholdActivityList({
     const request = ++sequence.current;
     void load(cursor, true, controller.signal, request);
   };
+
+  const [cancellingSettlementId, setCancellingSettlementId] = useState<string | null>(null);
+  const [cancellingBusy, setCancellingBusy] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+
+  const handleCancelSettlement = async () => {
+    if (!cancellingSettlementId || cancellingBusy) return;
+    setCancellingBusy(true);
+    setCancelError('');
+    try {
+      const response = await fetch(`/api/household/settlements/${cancellingSettlementId}/cancel`, {
+        method: 'POST',
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(readApiError(payload, 'No se pudo cancelar la liquidación.').message);
+      }
+      setItems((current) =>
+        current.map((act) =>
+          act.entry_type === 'settlement' && act.id === cancellingSettlementId
+            ? { ...act, is_cancelled: true }
+            : act
+        )
+      );
+      window.dispatchEvent(
+        new CustomEvent('household-finance-mutated', {
+          detail: { householdId },
+        })
+      );
+      setCancellingSettlementId(null);
+    } catch (caught) {
+      setCancelError(
+        caught instanceof Error ? caught.message : 'No se pudo cancelar la liquidación.'
+      );
+    } finally {
+      setCancellingBusy(false);
+    }
+  };
   if (initialLoading)
     return (
       <AsyncState
@@ -122,6 +162,65 @@ export function HouseholdActivityList({
     <div className="space-y-4">
       <ul className={`grid gap-3 ${compact ? '' : 'md:grid-cols-2'}`}>
         {items.map((item) => {
+          if (item.entry_type === 'settlement') {
+            const payerMember = members.find((member) => member.user_id === item.payer_user_id);
+            const payeeMember = members.find((member) => member.user_id === item.payee_user_id);
+            const payer = memberName(payerMember, userId);
+            const payee = memberName(payeeMember, userId);
+            const youArePayer = item.payer_user_id === userId;
+            const youArePayee = item.payee_user_id === userId;
+            const settlementLabel = youArePayer
+              ? `Liquidaste a ${payee}`
+              : youArePayee
+                ? `${payer} te liquidó`
+                : `${payer} liquidó a ${payee}`;
+
+            return (
+              <li
+                key={`${item.entry_type}:${item.id}`}
+                className="bg-surface w-full min-w-0 rounded-2xl border p-4"
+              >
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold break-words">{settlementLabel}</p>
+                    <p className="text-text-muted mt-1 text-sm">
+                      {formatFinancialDate(item.date)} · {item.is_cancelled ? 'Cancelada' : 'Liquidación'}
+                    </p>
+                  </div>
+                  <MoneyAmount amount={item.amount} className="text-base font-bold" />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span
+                    className={`rounded-full px-2 py-1 ${
+                      item.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-success-soft text-success'
+                    }`}
+                  >
+                    {item.is_cancelled ? 'Liquidación cancelada' : 'Liquidación completada'}
+                  </span>
+                  {!item.is_cancelled && !readOnly && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="text-danger hover:bg-danger-soft hover:text-danger h-7 px-2 text-xs font-semibold"
+                      onClick={() => {
+                        setCancelError('');
+                        setCancellingSettlementId(item.id);
+                      }}
+                    >
+                      Cancelar liquidación
+                    </Button>
+                  )}
+                </div>
+                {item.notes && (
+                  <p className="text-text-muted mt-2 text-xs break-words">
+                    {item.notes}
+                  </p>
+                )}
+              </li>
+            );
+          }
+
           const actorId = item.personal_payer_user_id ?? item.recorded_by_user_id;
           const actor = memberName(
             members.find((member) => member.user_id === actorId),
@@ -211,6 +310,21 @@ export function HouseholdActivityList({
           Fin del historial
         </p>
       )}
+      <ConfirmDialog
+        open={Boolean(cancellingSettlementId)}
+        title="¿Cancelar esta liquidación?"
+        description="Esta acción revertirá la liquidación y la deuda pendiente volverá a figurar en el balance entre ustedes."
+        confirmLabel="Cancelar liquidación"
+        busy={cancellingBusy}
+        error={cancelError}
+        onConfirm={() => void handleCancelSettlement()}
+        onClose={() => {
+          if (!cancellingBusy) {
+            setCancellingSettlementId(null);
+            setCancelError('');
+          }
+        }}
+      />
     </div>
   );
 }

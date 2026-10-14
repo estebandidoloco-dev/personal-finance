@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -569,6 +569,87 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "household_account_transactions"
             referencedColumns: ["id", "household_id"]
+          },
+        ]
+      }
+      household_settlements: {
+        Row: {
+          amount: number
+          cancelled_at: string | null
+          cancelled_by_user_id: string | null
+          created_at: string
+          date: string
+          household_id: string
+          id: string
+          idempotency_key: string
+          notes: string | null
+          payee_user_id: string
+          payer_user_id: string
+          recorded_by_user_id: string
+        }
+        Insert: {
+          amount: number
+          cancelled_at?: string | null
+          cancelled_by_user_id?: string | null
+          created_at?: string
+          date: string
+          household_id: string
+          id?: string
+          idempotency_key: string
+          notes?: string | null
+          payee_user_id: string
+          payer_user_id: string
+          recorded_by_user_id: string
+        }
+        Update: {
+          amount?: number
+          cancelled_at?: string | null
+          cancelled_by_user_id?: string | null
+          created_at?: string
+          date?: string
+          household_id?: string
+          id?: string
+          idempotency_key?: string
+          notes?: string | null
+          payee_user_id?: string
+          payer_user_id?: string
+          recorded_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "household_settlements_canceller_membership_fkey"
+            columns: ["household_id", "cancelled_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "household_members"
+            referencedColumns: ["household_id", "user_id"]
+          },
+          {
+            foreignKeyName: "household_settlements_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "household_settlements_payee_membership_fkey"
+            columns: ["household_id", "payee_user_id"]
+            isOneToOne: false
+            referencedRelation: "household_members"
+            referencedColumns: ["household_id", "user_id"]
+          },
+          {
+            foreignKeyName: "household_settlements_payer_membership_fkey"
+            columns: ["household_id", "payer_user_id"]
+            isOneToOne: false
+            referencedRelation: "household_members"
+            referencedColumns: ["household_id", "user_id"]
+          },
+          {
+            foreignKeyName: "household_settlements_recorder_membership_fkey"
+            columns: ["household_id", "recorded_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "household_members"
+            referencedColumns: ["household_id", "user_id"]
           },
         ]
       }
@@ -1223,6 +1304,10 @@ export type Database = {
         Args: { p_contribution_id: string }
         Returns: Json
       }
+      cancel_household_settlement: {
+        Args: { p_settlement_id: string }
+        Returns: Json
+      }
       create_personal_account: {
         Args: {
           p_name: string
@@ -1382,6 +1467,16 @@ export type Database = {
           p_idempotency_key: string
           p_note: string | null
           p_source_personal_account_id: string
+        }
+        Returns: Json
+      }
+      create_household_settlement: {
+        Args: {
+          p_amount: string
+          p_date: string
+          p_household_id: string
+          p_idempotency_key?: string
+          p_notes?: string | null
         }
         Returns: Json
       }

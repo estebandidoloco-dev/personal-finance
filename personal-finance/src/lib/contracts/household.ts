@@ -5,6 +5,7 @@ import {
   householdActivityPageResponseSchema,
   householdActivityResponseSchema,
   householdExpenseDetailResponseSchema,
+  householdSettlementResponseSchema,
 } from '@/lib/validation/household';
 
 const uuid = z.string().uuid();
@@ -61,6 +62,7 @@ export const householdAccountSchema = z
 
 export const splitSchema = z.object({ user_id: uuid, amount: exactSignedMoneySchema }).strict();
 export const expenseDetailSchema = householdExpenseDetailResponseSchema;
+export const settlementSchema = householdSettlementResponseSchema;
 export const activitySchema = householdActivityResponseSchema;
 export const pageSchema = householdActivityPageResponseSchema;
 export const archivedHouseholdSchema = z
@@ -83,6 +85,7 @@ export type Household = z.infer<typeof householdSchema>;
 export type HouseholdMember = z.infer<typeof memberSchema>;
 export type HouseholdAccount = z.infer<typeof householdAccountSchema>;
 export type HouseholdActivity = z.infer<typeof activitySchema>;
+export type HouseholdSettlement = z.infer<typeof settlementSchema>;
 export type HouseholdExpenseDetail = z.infer<typeof expenseDetailSchema>;
 export type ArchivedHousehold = z.infer<typeof archivedHouseholdSchema>;
 export type HouseholdBalance = {

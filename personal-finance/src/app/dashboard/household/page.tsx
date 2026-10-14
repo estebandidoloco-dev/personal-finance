@@ -17,6 +17,7 @@ import { MoneyAmount } from '@/components/dashboard/MoneyAmount';
 import { memberName } from '@/lib/household/presentation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { HouseholdSettlementDialog } from '@/components/household/HouseholdSettlementDialog';
 
 const ACCEPTED_FLASH_KEY = 'household_invitation_accepted';
 
@@ -96,6 +97,7 @@ function ActiveDashboard({
   userId: string;
 }) {
   const [accepted, setAccepted] = useState(false);
+  const [settlementOpen, setSettlementOpen] = useState(false);
   useEffect(() => {
     if (sessionStorage.getItem(ACCEPTED_FLASH_KEY) === '1') {
       sessionStorage.removeItem(ACCEPTED_FLASH_KEY);
@@ -122,6 +124,16 @@ function ActiveDashboard({
       balance: householdBalanceResponseSchema.parse(payloads[2]),
     };
   }, householdId);
+  useEffect(() => {
+    const handleMutation = (event: Event) => {
+      const customEvent = event as CustomEvent<{ householdId?: string }>;
+      if (!customEvent.detail?.householdId || customEvent.detail.householdId === householdId) {
+        resource.retry();
+      }
+    };
+    window.addEventListener('household-finance-mutated', handleMutation);
+    return () => window.removeEventListener('household-finance-mutated', handleMutation);
+  }, [householdId, resource]);
   if (resource.status === 'loading') return <AsyncState label="Cargando resumen del espacio…" />;
   if (resource.status === 'error')
     return <ErrorPanel message={resource.error} onRetry={resource.retry} />;
@@ -189,7 +201,31 @@ function ActiveDashboard({
         <p className="text-text-muted mt-2 max-w-2xl text-xs">
           No es un saldo bancario. Solo refleja gastos personales adelantados.
         </p>
+        {!even && (
+          <div className="mt-4">
+            <Button
+              type="button"
+              onClick={() => setSettlementOpen(true)}
+            >
+              Saldar cuenta
+            </Button>
+          </div>
+        )}
       </Card>
+      {!even && (
+        <HouseholdSettlementDialog
+          open={settlementOpen}
+          onOpenChange={setSettlementOpen}
+          householdId={householdId}
+          maxAmount={balance.amount}
+          payerName={balance.owed_by_user_id === userId ? 'Tú' : otherName}
+          payeeName={balance.owed_by_user_id === userId ? otherName : 'Tú'}
+          isPayerYou={balance.owed_by_user_id === userId}
+          onSuccess={() => {
+            resource.retry();
+          }}
+        />
+      )}
       <section className="min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="heading text-xl font-bold">Cuentas comunes</h2>
